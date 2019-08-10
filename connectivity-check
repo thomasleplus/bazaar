@@ -8,7 +8,7 @@ UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrom
 for URL in 'http://connectivity-check.ubuntu.com' 'http://www.neverssl.com'
 do
     /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
     /bin/echo
 done
 
@@ -17,7 +17,7 @@ UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 for URL in 'http://www.msftconnecttest.com/connecttest.txt' 'http://www.msftncsi.com/ncsi.txt'
 do
     /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
     /bin/echo
 done
 
@@ -26,7 +26,7 @@ UA='Mozilla/5.0 (Linux; U; Android 2.2) AppleWebKit/533.1 (KHTML, like Gecko) Ve
 for URL in 'http://clients3.google.com/generate_204' 'http://connectivitycheck.android.com/generate_204' 'http://connectivitycheck.gstatic.com/generate_204'
 do
     /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
     /bin/echo
 done
 
@@ -35,7 +35,7 @@ UA='Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 
 for URL in 'http://captive.apple.com/hotspot-detect.html' 'http://www.apple.com/library/test/success.html'
 do
     /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
     /bin/echo
 done
 
@@ -44,6 +44,6 @@ UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 for URL in 'https://www.google.com' 'https://www.apple.com'
 do
     /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
     /bin/echo
 done
