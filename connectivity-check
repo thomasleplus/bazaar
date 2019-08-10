@@ -37,7 +37,7 @@ done
 
 # SSL
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'
-for URL in 'https://www.google.com'
+for URL in 'https://www.google.com' 'https://www.amazon.com'
     /bin/echo -n "GET ${URL} -> "
     /usr/bin/curl -s -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
 done
