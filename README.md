@@ -16,5 +16,5 @@ If you have network connectivity but you do not have internet access because, fo
 
 Finally if you get a 4XX or 5XX HTTP error status code, it probably means that the corresponding requested URL is not valid anymore (or maybe the service is having some temporary issues).
 
-* https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
-* https://rootsh3ll.com/captive-portal-guide/
+https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
+https://rootsh3ll.com/captive-portal-guide/
