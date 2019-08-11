@@ -21,7 +21,7 @@ Finally if you get a 4XX or 5XX HTTP error status code, it probably means that t
 
 This is the program's output when internet is accessible:
 ```
-$ connectivity-check 
+$ connectivity-check
 GET http://connectivity-check.ubuntu.com
 HTTP/1.1 204 No Content
 
@@ -58,39 +58,39 @@ HTTP/1.1 200 OK
 
 And this is what the output looks like when the internet access is being blocked by a captive portal doing DNS spoofing:
 ```
-$ connectivity-check 
+$ connectivity-check
 GET http://connectivity-check.ubuntu.com
-curl: (6) Could not resolve host: connectivity-check.ubuntu.com
+curl: (52) Empty reply from server
 
 GET http://www.neverssl.com
-curl: (6) Could not resolve host: www.neverssl.com
+curl: (52) Empty reply from server
 
 GET http://www.msftconnecttest.com/connecttest.txt
-curl: (6) Could not resolve host: www.msftconnecttest.com
+curl: (52) Empty reply from server
 
 GET http://www.msftncsi.com/ncsi.txt
-curl: (6) Could not resolve host: www.msftncsi.com
+curl: (52) Empty reply from server
 
 GET http://clients3.google.com/generate_204
-curl: (6) Could not resolve host: clients3.google.com
+curl: (52) Empty reply from server
 
 GET http://connectivitycheck.android.com/generate_204
-curl: (6) Could not resolve host: connectivitycheck.android.com
+curl: (52) Empty reply from server
 
 GET http://connectivitycheck.gstatic.com/generate_204
-curl: (6) Could not resolve host: connectivitycheck.gstatic.com
+curl: (52) Empty reply from server
 
 GET http://captive.apple.com/hotspot-detect.html
-curl: (6) Could not resolve host: captive.apple.com
+curl: (52) Empty reply from server
 
 GET http://www.apple.com/library/test/success.html
-curl: (6) Could not resolve host: www.apple.com
+curl: (52) Empty reply from server
 
 GET https://www.google.com
-curl: (6) Could not resolve host: www.google.com
+curl: (51) SSL: no alternative certificate subject name matches target host name 'www.google.com'
 
 GET https://www.apple.com
-curl: (6) Could not resolve host: www.apple.com
+curl: (51) SSL: no alternative certificate subject name matches target host name 'www.apple.com'
 ```
 
 https://rootsh3ll.com/captive-portal-guide/
