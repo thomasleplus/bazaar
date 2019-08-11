@@ -56,7 +56,7 @@ GET https://www.apple.com
 HTTP/1.1 200 OK
 ```
 
-And this is what the output looks like when the internet access is being blocked by a captive portal doing DNS redirection:
+And this is what the output looks like when the internet access is being blocked by a captive portal doing DNS spoofing:
 ```
 $ connectivity-check 
 GET http://connectivity-check.ubuntu.com
