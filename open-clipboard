@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
+/usr/bin/xdg-open "$(/usr/bin/xclip -out -selection clipboard | /bin/sed 's/\s*$//; s/^\s*//;')"
