@@ -94,3 +94,7 @@ curl: (51) SSL: no alternative certificate subject name matches target host name
 ```
 
 https://rootsh3ll.com/captive-portal-guide/
+
+## open-clipboard
+
+Reads a file path or URL from the clipboard and opens it in the corresponding system default application. I have this command associated to a custom keyboard shortcut (Ctrl+B). This is particularly useful and easy to remember when you want to open a non-clickable URL: just select the URL text and do Ctrl+C then Ctrl+B to open in default browser.
