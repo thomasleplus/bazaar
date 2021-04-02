@@ -17,7 +17,7 @@ jobs:
           shellcheck \
             $(find . -type f \
             -exec grep -e '^#!.*sh$' -l \
-	    ) \
+            ) \
             $(find . -type f '(' \
             -name '*.bash' \
             -o -name '.bashrc' \
