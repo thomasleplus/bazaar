@@ -1,5 +1,7 @@
 # bazaar
-All sorts of unix utilities
+All sorts of unix utilitie
+
+[![ShellCheck](https://github.com/thomasleplus/bazaar/workflows/ShellCheck/badge.svg)](https://github.com/thomasleplus/bazaar/actions?query=workflow:"ShellCheck")
 
 ## connectivity-check
 
