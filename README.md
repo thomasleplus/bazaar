@@ -1,5 +1,6 @@
 # bazaar
-All sorts of unix utilitie
+
+All sorts of unix utilities
 
 [![ShellCheck](https://github.com/thomasleplus/bazaar/workflows/ShellCheck/badge.svg)](https://github.com/thomasleplus/bazaar/actions?query=workflow:"ShellCheck")
 
