@@ -15,6 +15,9 @@ jobs:
     - name: ShellCheck
       run: |
         shellcheck \
+          $(find . -type f \
+          -exec grep -e '^#!.*sh$' -l {} \; \
+          | grep -v -e '/.git/') \
           $(find . -type f '(' \
           -name '*.bash' \
           -o -name '.bashrc' \
