@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -uo pipefail
+IFS=$'\n\t'
+
+for disk in "$@"; do
+    \echo $(\date): turn on smart "${disk}"
+    \smartctl --smart=on --saveauto=on "${disk}"
+    \echo $(\date): wipe 1/2 "${disk}"
+    \dd if=/dev/urandom "of=${disk}" bs=1024k || \true
+    \echo $(\date): wipe 2/2 "${disk}"
+    \dd if=/dev/urandom "of=${disk}" bs=1024k || \true
+    \echo $(\date): test "${disk}"
+    if ! \smartctl -t long -C "${disk}" ; then
+	\smartctl -t long "${disk}"
+	\sleep 60
+	while \smartctl -a "${disk}" | \grep -e '% of test remaining.' ; do
+	    \sleep 60
+	done
+    fi
+    \echo $(\date): report "${disk}"
+    rand=$(\hexdump -vn8 -e'4/4 "%08X" 1 "\n"' /dev/urandom)
+    \smartctl -i -a "${disk}" > "${rand}.txt"
+    sn=$(\grep -e '^Serial Number:' "${rand}.txt" | \sed 's/^.* //' )
+    if [ ! -z "${sn}" ]; then
+	\mv -f "${rand}.txt" "${sn}.txt"
+	\echo >>  "${sn}.txt"
+	\echo -n "${sn}" | \shasum >> "${sn}.txt"
+    fi
+done
