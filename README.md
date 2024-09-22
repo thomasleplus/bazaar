@@ -23,6 +23,7 @@ Finally if you get a 4XX or 5XX HTTP error status code, it probably means that t
 ### Samples
 
 This is the program's output when internet is accessible:
+
 ```
 $ connectivity-check
 GET http://connectivity-check.ubuntu.com
@@ -60,6 +61,7 @@ HTTP/1.1 200 OK
 ```
 
 And this is what the output looks like when the internet access is being blocked by a captive portal doing DNS spoofing:
+
 ```
 $ connectivity-check
 GET http://connectivity-check.ubuntu.com
