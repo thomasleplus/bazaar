@@ -6,8 +6,8 @@ IFS=$'\n\t'
 for user in "$@"
 do
     user_repos=$(\curl -sS -H 'Accept: application/vnd.github+json' "https://api.github.com/users/${user}" | jq -r '.repos_url')
-    \curl -sS -H 'Accept: application/vnd.github+json' "${user_repos}" | jq -r '.[].clone_url'
-    for org_repos in $(\curl -sS -H 'Accept: application/vnd.github+json' "https://api.github.com/users/${user}/orgs" | jq -r '.[].repos_url'); do
-	\curl -sS -H 'Accept: application/vnd.github+json' "${org_repos}" | jq -r '.[].clone_url'
+    \curl -sS -H 'Accept: application/vnd.github+json' "${user_repos}?per_page=1000" | jq -r '.[].clone_url'
+    for org_repos in $(\curl -sS -H 'Accept: application/vnd.github+json' "https://api.github.com/users/${user}/orgs?per_page=1000" | jq -r '.[].repos_url'); do
+	\curl -sS -H 'Accept: application/vnd.github+json' "${org_repos}?per_page=1000" | jq -r '.[].clone_url'
     done
 done
