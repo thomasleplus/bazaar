@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
+for repo in "$@"; do
+	gh label create "build" -f -R "${repo}" -d "[Conventional Commits] Changes that affect the build system or external dependencies"
+	gh label create "chore" -f -R "${repo}" -d "[Conventional Commits] Changes that don't fit the other conventional commit types"
+	gh label create "ci" -f -R "${repo}" -d "[Conventional Commits] Changes to our CI configuration files and scripts"
+	gh label create "docs" -f -R "${repo}" -d "[Conventional Commits] Documentation only changes"
+	gh label create "feat" -f -R "${repo}" -d "[Conventional Commits] A new feature"
+	gh label create "fix" -f -R "${repo}" -d "[Conventional Commits] A bug fix"
+	gh label create "perf" -f -R "${repo}" -d "[Conventional Commits] A code change that improves performance"
+	gh label create "refactor" -f -R "${repo}" -d "[Conventional Commits] A code change that neither fixes a bug nor adds a feature"
+	gh label create "style" -f -R "${repo}" -d "[Conventional Commits] Change to code formatting only"
+	gh label create "test" -f -R "${repo}" -d "[Conventional Commits] Adding missing tests or correcting existing tests"
+done
