@@ -14,4 +14,5 @@ for repo in "$@"; do
 	gh label create "refactor" -f -R "${repo}" -d "[Conventional Commits] A code change that neither fixes a bug nor adds a feature"
 	gh label create "style" -f -R "${repo}" -d "[Conventional Commits] Change to code formatting only"
 	gh label create "test" -f -R "${repo}" -d "[Conventional Commits] Adding missing tests or correcting existing tests"
+	gh label create "no-release-notes" -f -R "${repo}" -d "Skip this pull request in release notes"
 done
