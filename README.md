@@ -24,7 +24,7 @@ Finally if you get a 4XX or 5XX HTTP error status code, it probably means that t
 
 This is the program's output when internet is accessible:
 
-```
+```shell
 $ connectivity-check
 GET http://connectivity-check.ubuntu.com
 HTTP/1.1 204 No Content
@@ -62,7 +62,7 @@ HTTP/1.1 200 OK
 
 And this is what the output looks like when the internet access is being blocked by a captive portal doing DNS spoofing:
 
-```
+```shell
 $ connectivity-check
 GET http://connectivity-check.ubuntu.com
 curl: (52) Empty reply from server
@@ -110,21 +110,39 @@ Generates random strings of desired length using a chosen alphabet.
 
 For example to generate a 20-character alphanumeric string:
 
-```
+```shell
 random-string -n 20 -r '[:alnum:]'
 ```
 
 To generate a 16-character hexadecimal string with
 uppercase letters:
 
-```
+```shell
 random-string -n 16 -r '0-9A-F'
+```
+
+To generate a 4-digit PIN:
+
+```shell
+random-string -n 4 -r '0-9'
 ```
 
 To generate a UUID:
 
+```shell
+s="$(random-string -n 32 -r '0-9a-f')"; printf "%s-%s-%s-%s-%s\n" "${s:0:8}" "${s:8:4}" "${s:12:4}" "${s:16:4}" "${s:20:12}"
 ```
-u="$(random-string -n 32 -r '0-9a-f')"; printf "%s-%s-%s-%s-%s" "${u:0:8}" "${u:8:4}" "${u:12:4}" "${u:16:4}" "${u:20:12}"
+
+To generate a fake email address:
+
+```shell
+s="$(random-string -n 24 -r 'a-z')"; printf "%s.%s@%s.com\n" "${s:0:8}" "${s:8:8}" "${s:16:8}"
+```
+
+To generate a fake US phone number:
+
+```shell
+s="$(random-string -n 10 -r '0-9')"; printf "(%s) %s-%s\n" "${s:0:3}" "${s:3:3}" "${s:6:4}"
 ```
 
 See `random-string -h` for details.
