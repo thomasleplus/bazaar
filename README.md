@@ -103,3 +103,28 @@ https://rootsh3ll.com/captive-portal-guide/
 ## [open-clipboard](open-clipboard)
 
 Reads a file path or URL from the clipboard and opens it in the corresponding system default application. I have this command associated to a custom keyboard shortcut (Ctrl+B). This is particularly useful and easy to remember when you want to open a non-clickable URL: just select the URL text and do Ctrl+C then Ctrl+B to open in default browser.
+
+## [random-string](random-string)
+
+Generates random strings of desired length using a chosen alphabet.
+
+For example to generate a 20-character alphanumeric string:
+
+```
+random-string -n 20 -r '[:alnum:]'
+```
+
+To generate a 16-character hexadecimal string with
+uppercase letters:
+
+```
+random-string -n 16 -r '0-9A-F'
+```
+
+To generate a UUID:
+
+```
+u="$(random-string -n 32 -r '0-9a-f')"; printf "%s-%s-%s-%s-%s" "${u:0:8}" "${u:8:4}" "${u:12:4}" "${u:16:4}" "${u:20:12}"
+```
+
+See `random-string -h` for details.
