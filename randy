@@ -9,7 +9,7 @@ IFS=$'\n\t'
 print_help() {
 	echo "Generates a random string of desired length using chosen alphabet."
 	echo
-	echo "Syntax: random-string [OPTIONS]"
+	echo "Syntax: randy [OPTIONS]"
 	echo
 	echo "Options:"
 	echo "-a STRING   Choose the alphabet as an ASCII string,"
@@ -44,37 +44,37 @@ while getopts ":va:hn:r:v" o; do
 		DEBUG=true
 		;;
 	"?")
-		>&2 echo "random-string: error: unknow option -${OPTARG}"
+		>&2 echo "randy: error: unknow option -${OPTARG}"
 		exit 1
 		;;
 	":")
-		>&2 echo "random-string: error: missing argument for option -${OPTARG}"
+		>&2 echo "randy: error: missing argument for option -${OPTARG}"
 		exit 1
 		;;
 	*)
-		>&2 echo "random-string: error: unexpected error while parsing options"
+		>&2 echo "randy: error: unexpected error while parsing options"
 		exit 1
 		;;
 	esac
 done
 
 if [[ -z ${length+x} ]]; then
-	>&2 echo 'random-string: error: missing option: -n LENGTH'
+	>&2 echo 'randy: error: missing option: -n LENGTH'
 	exit 1
 fi
 
 if [[ "${length}" =~ [^0-9] ]]; then
-	>&2 echo "random-string: error: invalid -n argument: ${length} is not a number"
+	>&2 echo "randy: error: invalid -n argument: ${length} is not a number"
 	exit 1
 fi
 
 if [[ -z ${alphabet+x} ]] && [[ -z ${range+x} ]]; then
-	>&2 echo 'random-string: error: missing option: -a STRING or -r RANGE'
+	>&2 echo 'randy: error: missing option: -a STRING or -r RANGE'
 	exit 1
 fi
 
 if [[ -n ${alphabet+x} ]] && [[ -n ${range+x} ]]; then
-	>&2 echo 'random-string: error: options -a and -r cannot be used together'
+	>&2 echo 'randy: error: options -a and -r cannot be used together'
 	exit 1
 fi
 
@@ -98,14 +98,10 @@ function join_by {
 	echo "${*}"
 }
 
-if [ -f /.dockerenv ]; then
-	>&2 echo 'random-string: warn: running in Docker, available entropy may be limited'
-fi
-
 alphabet_array=()
 if [[ -n ${range+x} ]]; then
 	if [ "${DEBUG}" = true ]; then
-		>&2 echo "random-string: debug: converting range '${range}' to alphabet"
+		>&2 echo "randy: debug: converting range '${range}' to alphabet"
 	fi
 	for i in {0..255}; do
 		c="$(int_to_char "${i}")"
@@ -115,12 +111,12 @@ if [[ -n ${range+x} ]]; then
 	done
 else
 	if [ "${DEBUG}" = true ]; then
-		>&2 echo "random-string: debug: converting alphabet '${alphabet}' to array"
+		>&2 echo "randy: debug: converting alphabet '${alphabet}' to array"
 	fi
 	while IFS='' read -r l; do alphabet_array+=("${l}"); done < <(echo "${alphabet}" | \grep -o . | \sort | \uniq)
 fi
 if [ "${DEBUG}" = true ]; then
-	>&2 echo "random-string: debug: final alphabet is: $(join_by ' ' "${alphabet_array[@]}")"
+	>&2 echo "randy: debug: final alphabet is: $(join_by ' ' "${alphabet_array[@]}")"
 fi
 # let's calculate the modulo
 m="${#alphabet_array[@]}"

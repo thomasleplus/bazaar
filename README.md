@@ -104,45 +104,45 @@ https://rootsh3ll.com/captive-portal-guide/
 
 Reads a file path or URL from the clipboard and opens it in the corresponding system default application. I have this command associated to a custom keyboard shortcut (Ctrl+B). This is particularly useful and easy to remember when you want to open a non-clickable URL: just select the URL text and do Ctrl+C then Ctrl+B to open in default browser.
 
-## [random-string](random-string)
+## [randy](randy)
 
 Generates random strings of desired length using a chosen alphabet.
+
+> [!WARN]
+> This script does not use a cryptographic-grade pseudorandom number
+> generator. It is a convenient way to generate random strings for
+> example if you need dummy data. But do NOT use it for anything
+> that requires good entropy.
 
 For example to generate a 20-character alphanumeric string:
 
 ```shell
-random-string -n 20 -r '[:alnum:]'
+randy -n 20 -r '[:alnum:]'
 ```
 
 To generate a 16-character hexadecimal string with
 uppercase letters:
 
 ```shell
-random-string -n 16 -r '0-9A-F'
-```
-
-To generate a 4-digit PIN:
-
-```shell
-random-string -n 4 -r '0-9'
+randy -n 16 -r '0-9A-F'
 ```
 
 To generate a UUID:
 
 ```shell
-s="$(random-string -n 32 -r '0-9a-f')"; printf "%s-%s-%s-%s-%s\n" "${s:0:8}" "${s:8:4}" "${s:12:4}" "${s:16:4}" "${s:20:12}"
+s="$(randy -n 32 -r '0-9a-f')"; printf "%s-%s-%s-%s-%s\n" "${s:0:8}" "${s:8:4}" "${s:12:4}" "${s:16:4}" "${s:20:12}"
 ```
 
 To generate a fake email address:
 
 ```shell
-s="$(random-string -n 24 -r 'a-z')"; printf "%s.%s@%s.com\n" "${s:0:8}" "${s:8:8}" "${s:16:8}"
+s="$(randy -n 24 -r 'a-z')"; printf "%s.%s@%s.com\n" "${s:0:8}" "${s:8:8}" "${s:16:8}"
 ```
 
 To generate a fake US phone number:
 
 ```shell
-s="$(random-string -n 10 -r '0-9')"; printf "(%s) %s-%s\n" "${s:0:3}" "${s:3:3}" "${s:6:4}"
+s="$(randy -n 10 -r '0-9')"; printf "(%s) %s-%s\n" "${s:0:3}" "${s:3:3}" "${s:6:4}"
 ```
 
-See `random-string -h` for details.
+See `randy -h` for details.
