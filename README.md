@@ -47,6 +47,22 @@ s="$(randy -n 10 -r '0-9')"; printf "(%s) %s-%s\n" "${s:0:3}" "${s:3:3}" "${s:6:
 
 See `randy -h` for details.
 
+## [derdp](derdp) and [rerdp](rerdp)
+
+Microsoft Remote Desktop Protocol files (`.rdp`) use an esoteric
+encoding called `USC-2 LE BOM`. It makes it difficult to edit this
+files with many text editors or with the usual command lines
+utilities. The scripts `derdp` and `rerdp` allow convert back and
+forth `USC-2 LE BOM` and the more traditional `latin1` encoding to
+make things easier.
+
+For example if you want to use `sed` to modify the content of a `.rdp`
+file, you could do something like:
+
+```shell
+cat old.rdp | derdp | sed -e 's/foo/bar/g' | redrp > new.rdp
+```
+
 ## [connectivity-check](connectivity-check)
 
 ### Overview
