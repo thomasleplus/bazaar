@@ -5,5 +5,5 @@ IFS=$'\n\t'
 
 printf "\xff\xfe"
 while LANG=C IFS= read -r -d '' -n 1 char ; do
-    printf "\x00${char}"
+    printf "\x00%s" "${char}"
 done

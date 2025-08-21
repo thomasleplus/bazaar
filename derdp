@@ -17,7 +17,7 @@ while LANG=C IFS= read -r -d '' -n 1 char ; do
 	fi
     else
 	# null chars are automatically ignored
-	printf "${char}"
+	printf "%s" "${char}"
     fi
     counter=$((counter+1))
 done
