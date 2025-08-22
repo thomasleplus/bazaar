@@ -113,7 +113,7 @@ else
 	if [ "${DEBUG}" = true ]; then
 		>&2 echo "randy: debug: converting alphabet '${alphabet}' to array"
 	fi
-	while IFS='' read -r l; do alphabet_array+=("${l}"); done < <(echo "${alphabet}" | \grep -o . | \sort | \uniq)
+	while IFS='' read -r l; do alphabet_array+=("${l}"); done < <(echo "${alphabet}" | \grep -o . | \sort -u)
 fi
 if [ "${DEBUG}" = true ]; then
 	>&2 echo "randy: debug: final alphabet is: $(join_by ' ' "${alphabet_array[@]}")"
