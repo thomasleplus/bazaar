@@ -88,7 +88,7 @@ fi
 
 function int_to_char {
 	[ "${1}" -lt 256 ] || return 1
-	# shellcheck disable=SC2059 # this is the way
+	# shellcheck disable=SC2059 # [Don't use variables in printf]: this is the way
 	printf "\\$(printf '%03o' "${1}")"
 }
 
