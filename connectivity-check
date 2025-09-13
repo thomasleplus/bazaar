@@ -5,45 +5,40 @@ IFS=$'\n\t'
 
 # Linux
 UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36'
-for URL in 'http://connectivity-check.ubuntu.com' 'http://www.neverssl.com'
-do
-    /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-    /bin/echo
+for URL in 'http://connectivity-check.ubuntu.com' 'http://www.neverssl.com'; do
+	/bin/echo "GET ${URL}"
+	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+	/bin/echo
 done
 
 # Windows
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'
-for URL in 'http://www.msftconnecttest.com/connecttest.txt' 'http://www.msftncsi.com/ncsi.txt'
-do
-    /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-    /bin/echo
+for URL in 'http://www.msftconnecttest.com/connecttest.txt' 'http://www.msftncsi.com/ncsi.txt'; do
+	/bin/echo "GET ${URL}"
+	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+	/bin/echo
 done
 
 # Android
 UA='Mozilla/5.0 (Linux; U; Android 2.2) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1'
-for URL in 'http://clients3.google.com/generate_204' 'http://connectivitycheck.android.com/generate_204' 'http://connectivitycheck.gstatic.com/generate_204'
-do
-    /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-    /bin/echo
+for URL in 'http://clients3.google.com/generate_204' 'http://connectivitycheck.android.com/generate_204' 'http://connectivitycheck.gstatic.com/generate_204'; do
+	/bin/echo "GET ${URL}"
+	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+	/bin/echo
 done
 
 # iOS
 UA='Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
-for URL in 'http://captive.apple.com/hotspot-detect.html' 'http://www.apple.com/library/test/success.html'
-do
-    /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-    /bin/echo
+for URL in 'http://captive.apple.com/hotspot-detect.html' 'http://www.apple.com/library/test/success.html'; do
+	/bin/echo "GET ${URL}"
+	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+	/bin/echo
 done
 
 # SSL
 UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'
-for URL in 'https://www.google.com' 'https://www.apple.com'
-do
-    /bin/echo "GET ${URL}"
-    /usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-    /bin/echo
+for URL in 'https://www.google.com' 'https://www.apple.com'; do
+	/bin/echo "GET ${URL}"
+	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
+	/bin/echo
 done
