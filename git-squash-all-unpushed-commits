@@ -1,0 +1,40 @@
+#!/bin/bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# Find upstream (assumes branch is tracking remote)
+UPSTREAM=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+if [ -z "$UPSTREAM" ]; then
+	echo "No upstream branch found. Make sure the branch is tracking a remote."
+	exit 1
+fi
+
+# Get commits that are not pushed
+COMMITS=$(git rev-list --reverse "${UPSTREAM}..HEAD")
+
+if [ -z "${COMMITS}" ]; then
+	echo "No local commits to process."
+	exit 0
+fi
+
+# Build a rebase todo list
+TODO_FILE=$(mktemp)
+LAST_MSG=''
+
+for COMMIT in ${COMMITS}; do
+	MSG=$(git log -n 1 --pretty=format:%s "${COMMIT}")
+
+	if [ ! -z "${LAST_MSG}" ]; then
+		echo "fixup ${COMMIT} ${MSG}" >>"${TODO_FILE}"
+	else
+		echo "pick ${COMMIT} ${MSG}" >>"${TODO_FILE}"
+	fi
+
+	LAST_MSG="${MSG}"
+done
+
+# Run non-interactive rebase with custom todo
+GIT_SEQUENCE_EDITOR="cat ${TODO_FILE} >" git rebase -i --autosquash --keep-empty "${UPSTREAM}"
+
+rm -f "${TODO_FILE}"
