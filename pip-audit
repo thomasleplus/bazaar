@@ -7,32 +7,32 @@ PYTHON=${PYTHON:-python3}
 echo "Using Python interpreter: $($PYTHON --version)"
 echo "Collecting package access times..."
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
-printf "%-30s %-25s %s\n" "PACKAGE" "LAST ACCESS" "PACKAGE PATH"
+printf "%-25s %-25s %-25s %s\n" "PACKAGE" "VERSION" "LAST ACCESS" "PACKAGE PATH"
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
 
 # Loop through all pip-installed packages
-$PYTHON -m pip list --format=freeze | while IFS=$'=' read -r pkg version; do
+$PYTHON -m pip list --format=freeze | sed -e 's/==/=/' | while IFS=$'=' read -r pkg version; do
 	# Get package install location
-	loc=$($PYTHON -m pip show "$pkg" 2>/dev/null | awk '/Location:/{print $2}')
-	if [ -z "$loc" ]; then
+	loc=$(${PYTHON} -m pip show "${pkg}" 2>/dev/null | awk '/Location:/{print $2}')
+	if [ -z "${loc}" ]; then
 		continue
 	fi
 
-	pkg_path="$loc/$pkg"
+	pkg_path="${loc}/${pkg}"
 
 	# Some packages are installed as .dist-info directories instead of pure package dirs
-	if [ ! -d "$pkg_path" ]; then
-		pkg_path=$(find "$loc" -maxdepth 1 -type d -name "${pkg}-*.dist-info" | head -n 1)
+	if [ ! -d "${pkg_path}" ]; then
+		pkg_path=$(find "${loc}" -maxdepth 1 -type d -name "${pkg}-*.dist-info" | head -n 1)
 	fi
 
 	# Skip if still not found
-	if [ ! -d "$pkg_path" ]; then
+	if [ ! -d "${pkg_path}" ]; then
 		continue
 	fi
 
 	# Get last access time in ISO 8601 format
-	atime=$(stat -f "%Sa" -t "%Y-%m-%dT%H:%M:%S%z" "$pkg_path" 2>/dev/null)
-	printf "%-30s %-25s %s\n" "$pkg" "$atime" "$pkg_path"
+	atime=$(stat -f "%Sa" -t "%Y-%m-%dT%H:%M:%S%z" "${pkg_path}" 2>/dev/null)
+	printf "%-25s %-25s %-25s %s\n" "${pkg}" "${version}" "${atime}" "${pkg_path}"
 done
 
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
