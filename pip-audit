@@ -12,27 +12,27 @@ echo "--------------------------------------------------------------------------
 
 # Loop through all pip-installed packages
 $PYTHON -m pip list --format=freeze | while IFS== read -r pkg version; do
-    # Get package install location
-    loc=$($PYTHON -m pip show "$pkg" 2>/dev/null | awk '/Location:/{print $2}')
-    if [ -z "$loc" ]; then
-        continue
-    fi
+	# Get package install location
+	loc=$($PYTHON -m pip show "$pkg" 2>/dev/null | awk '/Location:/{print $2}')
+	if [ -z "$loc" ]; then
+		continue
+	fi
 
-    pkg_path="$loc/$pkg"
+	pkg_path="$loc/$pkg"
 
-    # Some packages are installed as .dist-info directories instead of pure package dirs
-    if [ ! -d "$pkg_path" ]; then
-        pkg_path=$(find "$loc" -maxdepth 1 -type d -name "${pkg}-*.dist-info" | head -n 1)
-    fi
+	# Some packages are installed as .dist-info directories instead of pure package dirs
+	if [ ! -d "$pkg_path" ]; then
+		pkg_path=$(find "$loc" -maxdepth 1 -type d -name "${pkg}-*.dist-info" | head -n 1)
+	fi
 
-    # Skip if still not found
-    if [ ! -d "$pkg_path" ]; then
-        continue
-    fi
+	# Skip if still not found
+	if [ ! -d "$pkg_path" ]; then
+		continue
+	fi
 
-    # Get last access time in ISO 8601 format
-    atime=$(stat -f "%Sa" -t "%Y-%m-%dT%H:%M:%S%z" "$pkg_path" 2>/dev/null)
-    printf "%-30s %-25s %s\n" "$pkg" "$atime" "$pkg_path"
+	# Get last access time in ISO 8601 format
+	atime=$(stat -f "%Sa" -t "%Y-%m-%dT%H:%M:%S%z" "$pkg_path" 2>/dev/null)
+	printf "%-30s %-25s %s\n" "$pkg" "$atime" "$pkg_path"
 done
 
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
