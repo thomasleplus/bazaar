@@ -11,7 +11,7 @@ printf "%-30s %-25s %s\n" "PACKAGE" "LAST ACCESS" "PACKAGE PATH"
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
 
 # Loop through all pip-installed packages
-$PYTHON -m pip list --format=freeze | while IFS== read -r pkg version; do
+$PYTHON -m pip list --format=freeze | while IFS=$'=' read -r pkg version; do
 	# Get package install location
 	loc=$($PYTHON -m pip show "$pkg" 2>/dev/null | awk '/Location:/{print $2}')
 	if [ -z "$loc" ]; then
