@@ -1,4 +1,6 @@
 #!/bin/bash
+# Decodes UTF-16 LE (little-endian) encoded text from stdin
+# Strips the byte order mark (0xFF 0xFE) and null bytes to output plain text
 
 set -euo pipefail
 IFS=$'\n\t'

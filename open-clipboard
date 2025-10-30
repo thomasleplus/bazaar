@@ -1,4 +1,6 @@
 #!/bin/bash
+# Opens the URL from the clipboard in the default browser
+# Trims whitespace from the clipboard content before opening
 
 set -euo pipefail
 IFS=$'\n\t'

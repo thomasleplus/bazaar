@@ -1,4 +1,6 @@
 #!/bin/bash
+# Encodes plain text to UTF-16 LE (little-endian) format
+# Adds byte order mark (0xFF 0xFE) and null bytes between characters
 
 set -euo pipefail
 IFS=$'\n\t'

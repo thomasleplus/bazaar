@@ -1,4 +1,7 @@
 #!/bin/bash
+# Lists all Git clone URLs for repositories belonging to specified GitHub users
+# Includes both user repositories and organization repositories the user belongs to
+# Usage: github-list-repos <username1> <username2> ...
 
 set -euo pipefail
 IFS=$'\n\t'

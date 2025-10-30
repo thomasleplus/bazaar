@@ -1,4 +1,6 @@
 #!/bin/bash
+# Squashes all unpushed commits into a single commit using the oldest commit message
+# Performs an interactive rebase that keeps the first commit and fixups all subsequent ones
 
 set -euo pipefail
 IFS=$'\n\t'

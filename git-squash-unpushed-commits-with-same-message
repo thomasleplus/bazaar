@@ -1,4 +1,6 @@
 #!/bin/bash
+# Squashes consecutive unpushed commits that have the same commit message
+# Groups commits by message and combines those with identical messages
 
 set -euo pipefail
 IFS=$'\n\t'

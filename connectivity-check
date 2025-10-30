@@ -1,4 +1,6 @@
 #!/bin/bash
+# Tests network connectivity by checking various OS-specific connectivity endpoints
+# Queries Linux, Windows, Android, iOS, and SSL endpoints to verify network access
 
 set -uo pipefail
 IFS=$'\n\t'

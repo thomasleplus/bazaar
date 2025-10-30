@@ -1,4 +1,8 @@
 #!/bin/bash
+# Securely wipes hard drives and runs SMART diagnostics
+# Performs two-pass random data wipe, runs long SMART test, and generates a report file
+# WARNING: This script will DESTROY ALL DATA on the specified drives
+# Usage: hdd-smart-info <disk1> <disk2> ...
 
 set -uo pipefail
 IFS=$'\n\t'

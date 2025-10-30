@@ -160,3 +160,75 @@ curl: (51) SSL: no alternative certificate subject name matches target host name
 ## [open-clipboard](open-clipboard)
 
 Reads a file path or URL from the clipboard and opens it in the corresponding system default application. I have this command associated to a custom keyboard shortcut (Ctrl+B). This is particularly useful and easy to remember when you want to open a non-clickable URL: just select the URL text and do Ctrl+C then Ctrl+B to open in default browser.
+
+## [pip-audit](pip-audit)
+
+Lists all pip-installed packages along with their versions, last access times, and installation paths. This is useful for identifying unused Python packages that can be safely removed.
+
+```shell
+pip-audit
+```
+
+You can specify which Python interpreter to use:
+
+```shell
+PYTHON=python3.12 pip-audit
+```
+
+> [!NOTE]
+> Access times may be inaccurate if your filesystem uses the `noatime` mount option.
+
+## [git-squash-unpushed-commits-with-oldest-message](git-squash-unpushed-commits-with-oldest-message)
+
+Squashes all unpushed commits on the current branch into a single commit, keeping the message from the oldest commit. This is useful for cleaning up a feature branch before merging.
+
+```shell
+git-squash-unpushed-commits-with-oldest-message
+```
+
+The script automatically detects the upstream branch and only squashes commits that haven't been pushed yet.
+
+## [git-squash-unpushed-commits-with-same-message](git-squash-unpushed-commits-with-same-message)
+
+Squashes consecutive unpushed commits that have identical commit messages. This is useful when you've made multiple commits with the same message and want to combine them.
+
+```shell
+git-squash-unpushed-commits-with-same-message
+```
+
+## [github-create-labels](github-create-labels)
+
+Creates a standardized set of Conventional Commits labels in GitHub repositories. This adds labels for `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `style`, `test`, and `no-release-notes`.
+
+```shell
+github-create-labels owner/repo1 owner/repo2
+```
+
+Requires the GitHub CLI (`gh`) to be installed and authenticated.
+
+## [github-list-repos](github-list-repos)
+
+Lists all Git clone URLs for repositories belonging to specified GitHub users. This includes both personal repositories and organization repositories the user belongs to.
+
+```shell
+github-list-repos username1 username2
+```
+
+Output can be piped to other commands for bulk operations:
+
+```shell
+github-list-repos myusername | xargs -n1 git clone
+```
+
+## [hdd-smart-info](hdd-smart-info)
+
+Securely wipes hard drives and runs comprehensive SMART diagnostics. This script performs a two-pass random data wipe, executes a long SMART self-test, and generates a detailed report file named after the drive's serial number.
+
+> [!WARNING]
+> This script will PERMANENTLY DESTROY ALL DATA on the specified drives. Use with extreme caution.
+
+```shell
+sudo hdd-smart-info /dev/sda /dev/sdb
+```
+
+The script generates a report file `<serial-number>.txt` containing the SMART test results and drive information.
