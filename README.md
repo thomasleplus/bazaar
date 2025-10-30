@@ -2,8 +2,6 @@
 
 All sorts of Unix utilities.
 
-[![ShellCheck](https://github.com/thomasleplus/bazaar/workflows/ShellCheck/badge.svg)](https://github.com/thomasleplus/bazaar/actions?query=workflow:"ShellCheck")
-
 ## [randy](randy)
 
 Generates random strings of desired length using a chosen alphabet.
