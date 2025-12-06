@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+IFS=$'\n\t'
 
 # Display usage information
 usage() {
@@ -114,5 +115,3 @@ for file in "${files[@]}"; do
 	# \Q...\E: quote (disable) pattern metacharacters for literal matching
 	perl -i -pe "s${delimiter}\Q$from_string\E${delimiter}$to_string${delimiter}g" "$file"
 done
-
-echo "Replacement complete: replaced '$from_string' with '$to_string' in ${#files[@]} file(s)"
