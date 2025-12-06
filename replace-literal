@@ -5,9 +5,9 @@ IFS=$'\n\t'
 # Display usage information
 usage() {
 	cat <<EOF
-Usage: $(basename "$0") -f|--from <string> -t|--to <string> <file> [<file>...]
+Usage: $(basename "$0") -f|--from <string> -t|--to <string> [<file>...]
 
-Replace literal string occurrences in files (not regex).
+Replace literal string occurrences in files or stdin (not regex).
 
 Options:
     -f, --from <string>    String to search for (literal)
@@ -15,10 +15,11 @@ Options:
     -h, --help             Display this help message
 
 Arguments:
-    <file>...              Files to process
+    <file>...              Files to process (optional, reads from stdin if omitted)
 
-Example:
+Examples:
     $(basename "$0") -f 'foo' -t 'bar' file1.txt file2.txt
+    echo 'foo bar' | $(basename "$0") -f 'foo' -t 'bar'
 EOF
 	exit "${1:-0}"
 }
@@ -72,9 +73,28 @@ if [[ -z "$to_string" ]]; then
 	usage 1
 fi
 
+# Find a delimiter character that doesn't appear in from_string or to_string
+# Try common delimiters in order of preference
+delimiter=""
+for char in '/' '#' '@' '|' '~' '%' ',' ':' ';' '!' '^' '-' '_' '='; do
+	if [[ "$from_string" != *"$char"* && "$to_string" != *"$char"* ]]; then
+		delimiter="$char"
+		break
+	fi
+done
+
+if [[ -z "$delimiter" ]]; then
+	echo "Error: Cannot find a safe delimiter character for the given strings" >&2
+	exit 1
+fi
+
+# Process stdin if no files specified
 if [[ ${#files[@]} -eq 0 ]]; then
-	echo "Error: At least one file must be specified" >&2
-	usage 1
+	# Use perl with \Q...\E for literal string replacement
+	# -pe: print each line after processing
+	# \Q...\E: quote (disable) pattern metacharacters for literal matching
+	perl -pe "s${delimiter}\Q$from_string\E${delimiter}$to_string${delimiter}g"
+	exit 0
 fi
 
 # Process each file
@@ -91,21 +111,6 @@ for file in "${files[@]}"; do
 
 	if [[ ! -w "$file" ]]; then
 		echo "Error: Cannot write to file: $file" >&2
-		exit 1
-	fi
-
-	# Find a delimiter character that doesn't appear in from_string or to_string
-	# Try common delimiters in order of preference
-	delimiter=""
-	for char in '/' '#' '@' '|' '~' '%' ',' ':' ';' '!' '^' '-' '_' '='; do
-		if [[ "$from_string" != *"$char"* && "$to_string" != *"$char"* ]]; then
-			delimiter="$char"
-			break
-		fi
-	done
-
-	if [[ -z "$delimiter" ]]; then
-		echo "Error: Cannot find a safe delimiter character for the given strings" >&2
 		exit 1
 	fi
 
