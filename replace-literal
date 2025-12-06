@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Display usage information
+usage() {
+	cat <<EOF
+Usage: $(basename "$0") -f|--from <string> -t|--to <string> <file> [<file>...]
+
+Replace literal string occurrences in files (not regex).
+
+Options:
+    -f, --from <string>    String to search for (literal)
+    -t, --to <string>      String to replace with (literal)
+    -h, --help             Display this help message
+
+Arguments:
+    <file>...              Files to process
+
+Example:
+    $(basename "$0") -f 'foo' -t 'bar' file1.txt file2.txt
+EOF
+	exit "${1:-0}"
+}
+
+# Initialize variables
+from_string=""
+to_string=""
+files=()
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	-f | --from)
+		if [[ -z "${2:-}" ]]; then
+			echo "Error: --from requires an argument" >&2
+			usage 1
+		fi
+		from_string="$2"
+		shift 2
+		;;
+	-t | --to)
+		if [[ -z "${2:-}" ]]; then
+			echo "Error: --to requires an argument" >&2
+			usage 1
+		fi
+		to_string="$2"
+		shift 2
+		;;
+	-h | --help)
+		usage 0
+		;;
+	-*)
+		echo "Error: Unknown option: $1" >&2
+		usage 1
+		;;
+	*)
+		files+=("$1")
+		shift
+		;;
+	esac
+done
+
+# Validate required arguments
+if [[ -z "$from_string" ]]; then
+	echo "Error: --from is required" >&2
+	usage 1
+fi
+
+if [[ -z "$to_string" ]]; then
+	echo "Error: --to is required" >&2
+	usage 1
+fi
+
+if [[ ${#files[@]} -eq 0 ]]; then
+	echo "Error: At least one file must be specified" >&2
+	usage 1
+fi
+
+# Process each file
+for file in "${files[@]}"; do
+	if [[ ! -f "$file" ]]; then
+		echo "Error: File not found: $file" >&2
+		exit 1
+	fi
+
+	if [[ ! -r "$file" ]]; then
+		echo "Error: Cannot read file: $file" >&2
+		exit 1
+	fi
+
+	if [[ ! -w "$file" ]]; then
+		echo "Error: Cannot write to file: $file" >&2
+		exit 1
+	fi
+
+	# Find a delimiter character that doesn't appear in from_string or to_string
+	# Try common delimiters in order of preference
+	delimiter=""
+	for char in '/' '#' '@' '|' '~' '%' ',' ':' ';' '!' '^' '-' '_' '='; do
+		if [[ "$from_string" != *"$char"* && "$to_string" != *"$char"* ]]; then
+			delimiter="$char"
+			break
+		fi
+	done
+
+	if [[ -z "$delimiter" ]]; then
+		echo "Error: Cannot find a safe delimiter character for the given strings" >&2
+		exit 1
+	fi
+
+	# Use perl with \Q...\E for literal string replacement
+	# -i: edit in place
+	# -pe: print each line after processing
+	# \Q...\E: quote (disable) pattern metacharacters for literal matching
+	perl -i -pe "s${delimiter}\Q$from_string\E${delimiter}$to_string${delimiter}g" "$file"
+done
+
+echo "Replacement complete: replaced '$from_string' with '$to_string' in ${#files[@]} file(s)"
