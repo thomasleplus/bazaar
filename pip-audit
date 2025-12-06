@@ -1,4 +1,8 @@
 #!/bin/bash
+
+set -euo pipefail
+IFS=$'\n\t'
+
 # Lists pip-installed packages and their last access times
 
 # You can specify which python to use, e.g. PYTHON=python3.12
