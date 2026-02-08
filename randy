@@ -44,7 +44,7 @@ while getopts ":va:hn:r:v" o; do
 		DEBUG=true
 		;;
 	"?")
-		>&2 echo "randy: error: unknow option -${OPTARG}"
+		>&2 echo "randy: error: unknown option -${OPTARG}"
 		exit 1
 		;;
 	":")
