@@ -1,4 +1,6 @@
 #!/bin/bash
+# Generates a cryptographically-seeded random string of a desired length
+# Supports specifying the alphabet as a literal string (-a) or character range (-r)
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -93,6 +95,7 @@ function int_to_char {
 }
 
 function join_by {
+	# Setting local IFS causes ${*} to expand with that delimiter between elements.
 	local IFS="${1}"
 	shift
 	echo "${*}"

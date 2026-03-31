@@ -1,4 +1,6 @@
 #!/bin/bash
+# Displays the full dependency tree for packages listed in requirements.txt
+# Creates a temporary virtual environment, installs dependencies, and runs pipdeptree
 
 set -euo pipefail
 IFS=$'\n\t'

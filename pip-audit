@@ -15,6 +15,7 @@ printf "%-25s %-25s %-25s %s\n" "PACKAGE" "VERSION" "LAST ACCESS" "PACKAGE PATH"
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
 
 # Loop through all pip-installed packages
+# --format=freeze outputs "pkg==version"; sed converts "==" to "=" so IFS='=' can split it.
 $PYTHON -m pip list --format=freeze | sed -e 's/==/=/' | while IFS=$'=' read -r pkg version; do
 	# Get package install location
 	loc=$(${PYTHON} -m pip show "${pkg}" 2>/dev/null | awk '/Location:/{print $2}')

@@ -58,7 +58,7 @@ For example if you want to use `sed` to modify the content of a `.rdp`
 file, you could do something like:
 
 ```shell
-cat old.rdp | derdp | sed -e 's/foo/bar/g' | redrp > new.rdp
+cat old.rdp | derdp | sed -e 's/foo/bar/g' | rerdp > new.rdp
 ```
 
 ## [connectivity-check](connectivity-check)
@@ -175,6 +175,33 @@ PYTHON=python3.12 pip-audit
 
 > [!NOTE]
 > Access times may be inaccurate if your filesystem uses the `noatime` mount option.
+
+## [pip-tree](pip-tree)
+
+Displays the full dependency tree for the packages listed in a `requirements.txt` file. It creates a temporary virtual environment, installs the dependencies, runs [`pipdeptree`](https://github.com/tox-dev/pipdeptree), then tears down the environment — leaving nothing behind.
+
+Run from the directory that contains your `requirements.txt`:
+
+```shell
+pip-tree
+```
+
+## [replace-literal](replace-literal)
+
+Replaces literal string occurrences in files or stdin. Unlike `sed`, it treats the search string as plain text rather than a regular expression, so characters like `.`, `*`, `/`, and `[` need no escaping.
+
+Replace a string in one or more files in-place:
+
+```shell
+replace-literal -f 'http://example.com' -t 'https://example.com' file.txt
+replace-literal -f 'old_function_name' -t 'new_function_name' src/*.py
+```
+
+Or pipe from stdin:
+
+```shell
+cat file.txt | replace-literal -f 'foo' -t 'bar'
+```
 
 ## [git-squash-unpushed-commits-with-oldest-message](git-squash-unpushed-commits-with-oldest-message)
 
