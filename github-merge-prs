@@ -11,6 +11,19 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# ANSI colour codes for log messages, blanked when NO_COLOR is set or the target
+# stream is not a terminal, so redirected output and pipes stay free of escape
+# sequences (see https://no-color.org/). info() writes progress to stdout; warn()
+# and err() write to stderr.
+info_col='' info_off='' warn_col='' err_col='' msg_off=''
+if [ -z "${NO_COLOR:-}" ]; then
+	if [ -t 1 ]; then info_col=$'\033[36m'; info_off=$'\033[0m'; fi
+	if [ -t 2 ]; then warn_col=$'\033[33m'; err_col=$'\033[31m'; msg_off=$'\033[0m'; fi
+fi
+info() { echo "${info_col}$*${info_off}"; }
+warn() { >&2 echo "${warn_col}warn: $*${msg_off}"; }
+err() { >&2 echo "${err_col}$*${msg_off}"; }
+
 # Split arguments: options (leading "-") are forwarded to `gh pr merge`, the
 # rest are the author logins to match. GitHub usernames never start with "-",
 # so this classification is unambiguous.
@@ -24,7 +37,7 @@ for arg in "$@"; do
 done
 
 if [ "${#authors[@]}" -eq 0 ]; then
-	>&2 echo "usage: github-merge-prs [gh-merge-option ...] <author> [author ...]  # repos on stdin"
+	err "usage: github-merge-prs [gh-merge-option ...] <author> [author ...]  # repos on stdin"
 	exit 1
 fi
 
@@ -79,7 +92,7 @@ process_repo() {
 			| .[]
 			| select(.author.login as $l | $wanted | index($l))
 			| "\(.number)\t\(.title)"' "${authors[@]}")"; then
-		>&2 echo "warn: could not list PRs for ${repo}, skipping"
+		warn "could not list PRs for ${repo}, skipping"
 		return 1
 	fi
 
@@ -92,19 +105,19 @@ process_repo() {
 		# before attempting the merge.
 		for ((attempt = 1; attempt <= 10; attempt++)); do
 			[ "$(pr_merge_state "${repo}" "${number}")" = "BEHIND" ] || break
-			echo "updating ${repo}#${number}: branch behind base (attempt ${attempt}/10)"
+			info "updating ${repo}#${number}: branch behind base (attempt ${attempt}/10)"
 			if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null; then
-				>&2 echo "warn: could not update branch for ${repo}#${number}"
+				warn "could not update branch for ${repo}#${number}"
 				return 1
 			fi
 			# Pause after each update so the push has a chance to (re)trigger
 			# workflows and GitHub can recompute the merge state before we recheck.
 			\sleep 3
 		done
-		echo "merging ${repo}#${number}: ${title}"
+		info "merging ${repo}#${number}: ${title}"
 		# Forward the caller's options (plus the default method) to gh pr merge.
 		if ! \gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null; then
-			>&2 echo "warn: failed to merge ${repo}#${number}"
+			warn "failed to merge ${repo}#${number}"
 			return 1
 		fi
 	done <<<"${prs}"
