@@ -1,0 +1,134 @@
+#!/bin/bash
+# Merges all open pull requests authored by the given GitHub users.
+# Reads the list of repositories (clone URLs or OWNER/REPO) from stdin.
+# Any argument starting with "-" (e.g. --admin, --squash, --delete-branch) is
+# forwarded verbatim to `gh pr merge`; the remaining arguments are the author
+# logins to match. Options that take a value must be given as --flag=value.
+# If no merge method (--merge/--squash/--rebase) is passed, --merge is used.
+# Usage: github-list-repos <user> ... | github-merge-prs [gh-merge-option ...] <author> ...
+# Example: github-list-repos me | github-merge-prs --admin --squash me 'dependabot[bot]'
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# Split arguments: options (leading "-") are forwarded to `gh pr merge`, the
+# rest are the author logins to match. GitHub usernames never start with "-",
+# so this classification is unambiguous.
+opts=()
+authors=()
+for arg in "$@"; do
+	case "${arg}" in
+		-*) opts+=("${arg}") ;;
+		*) authors+=("${arg}") ;;
+	esac
+done
+
+if [ "${#authors[@]}" -eq 0 ]; then
+	>&2 echo "usage: github-merge-prs [gh-merge-option ...] <author> [author ...]  # repos on stdin"
+	exit 1
+fi
+
+# gh pr merge needs a merge method in non-interactive mode; default to --merge
+# unless the caller already forwarded one.
+has_method=false
+for o in ${opts[@]+"${opts[@]}"}; do
+	case "${o}" in
+		--merge | -m | --squash | -s | --rebase | -r) has_method=true ;;
+	esac
+done
+"${has_method}" || opts+=(--merge)
+
+# Print the PR's mergeStateStatus, polling briefly while GitHub recomputes it
+# (it reports UNKNOWN until the background mergeability check settles).
+pr_merge_state() {
+	local repo="$1" number="$2" i state
+	for ((i = 0; i < 5; i++)); do
+		state="$(\gh pr view "${number}" --repo "${repo}" \
+			--json mergeStateStatus --jq .mergeStateStatus </dev/null 2>/dev/null || true)"
+		if [ -n "${state}" ] && [ "${state}" != "UNKNOWN" ]; then
+			echo "${state}"
+			return 0
+		fi
+		\sleep 2
+	done
+	echo "${state:-UNKNOWN}"
+}
+
+# Merge every open PR one repo has from the requested authors. Returns non-zero
+# on the first gh failure so the caller can count it and move on to the next
+# repo (rather than aborting the whole run or masking the failure).
+process_repo() {
+	local repo="$1"
+	local prs number title attempt
+
+	# List open PRs in this repo authored by any of the requested users.
+	#
+	# Identity is matched ONLY against .author.login -- the account GitHub
+	# recorded as opening the PR. That value cannot be spoofed: nobody can open
+	# a PR as another account, and an App/bot login is namespaced "app/<slug>",
+	# which no human account can hold (usernames may not contain "/"). gh reports
+	# the real Dependabot as login "app/dependabot", so we normalise a requested
+	# "<name>[bot]" to that authoritative "app/<name>" form and compare by exact
+	# equality. We deliberately do NOT synthesise a "[bot]" form from the author
+	# side, otherwise a human who registered the username "dependabot" would be
+	# accepted in place of the genuine "app/dependabot" bot.
+	if ! prs="$(\gh pr list --repo "${repo}" --state open --limit 1000 \
+		--json number,title,author </dev/null |
+		\jq -r --args '
+			($ARGS.positional | map(if endswith("[bot]") then "app/" + .[0:-5] else . end)) as $wanted
+			| .[]
+			| select(.author.login as $l | $wanted | index($l))
+			| "\(.number)\t\(.title)"' "${authors[@]}")"; then
+		>&2 echo "warn: could not list PRs for ${repo}, skipping"
+		return 1
+	fi
+
+	[ -n "${prs}" ] || return 0
+
+	while IFS=$'\t' read -r number title; do
+		[ -n "${number}" ] || continue
+		# When branch protection requires an up-to-date branch, the PR shows as
+		# BEHIND. Update it (merging in the base) and re-check, up to 10 times,
+		# before attempting the merge.
+		for ((attempt = 1; attempt <= 10; attempt++)); do
+			[ "$(pr_merge_state "${repo}" "${number}")" = "BEHIND" ] || break
+			echo "updating ${repo}#${number}: branch behind base (attempt ${attempt}/10)"
+			if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null; then
+				>&2 echo "warn: could not update branch for ${repo}#${number}"
+				return 1
+			fi
+			# Pause after each update so the push has a chance to (re)trigger
+			# workflows and GitHub can recompute the merge state before we recheck.
+			\sleep 3
+		done
+		echo "merging ${repo}#${number}: ${title}"
+		# Forward the caller's options (plus the default method) to gh pr merge.
+		if ! \gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null; then
+			>&2 echo "warn: failed to merge ${repo}#${number}"
+			return 1
+		fi
+	done <<<"${prs}"
+}
+
+# Read the repo list on stdin; keep it out of the way of the gh calls below
+# (which we run with </dev/null so they never consume the repo stream). Each
+# repo whose processing hits a gh failure bumps the counter; the script exits
+# with that count so 0 means every repo was handled cleanly.
+errors=0
+while IFS= read -r line; do
+	[ -n "${line}" ] || continue
+	# Normalise clone URLs (https or ssh) down to OWNER/REPO; leave OWNER/REPO as-is.
+	repo="${line%.git}"
+	repo="${repo#https://github.com/}"
+	repo="${repo#http://github.com/}"
+	repo="${repo#ssh://git@github.com/}"
+	repo="${repo#git@github.com:}"
+
+	if ! process_repo "${repo}"; then
+		errors=$((errors + 1))
+	fi
+done
+
+# Cap at 255 so a large batch can't wrap the shell's 8-bit exit code back to 0.
+[ "${errors}" -gt 255 ] && errors=255
+exit "${errors}"
