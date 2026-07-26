@@ -92,7 +92,7 @@ process_repo() {
 			| .[]
 			| select(.author.login as $l | $wanted | index($l))
 			| "\(.number)\t\(.title)"' "${authors[@]}")"; then
-		warn "could not list PRs for ${repo}, skipping"
+		err "could not list PRs for ${repo}, skipping"
 		return 1
 	fi
 
@@ -107,7 +107,7 @@ process_repo() {
 			[ "$(pr_merge_state "${repo}" "${number}")" = "BEHIND" ] || break
 			info "updating ${repo}#${number}: branch behind base (attempt ${attempt}/10)"
 			if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null; then
-				warn "could not update branch for ${repo}#${number}"
+				err "could not update branch for ${repo}#${number}"
 				return 1
 			fi
 			# Pause after each update so the push has a chance to (re)trigger
@@ -117,7 +117,7 @@ process_repo() {
 		info "merging ${repo}#${number}: ${title}"
 		# Forward the caller's options (plus the default method) to gh pr merge.
 		if ! \gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null; then
-			warn "failed to merge ${repo}#${number}"
+			err "failed to merge ${repo}#${number}"
 			return 1
 		fi
 	done <<<"${prs}"
