@@ -67,12 +67,13 @@ pr_merge_state() {
 	echo "${state:-UNKNOWN}"
 }
 
-# Merge every open PR one repo has from the requested authors. Returns non-zero
-# on the first gh failure so the caller can count it and move on to the next
-# repo (rather than aborting the whole run or masking the failure).
+# Merge every open PR one repo has from the requested authors. A failure on an
+# individual PR (branch update or merge) is recorded and processing moves on to
+# the next PR, so one unmergeable PR doesn't skip the rest of the repo. Returns
+# non-zero if any PR failed, so the caller can count the repo and move on.
 process_repo() {
 	local repo="$1"
-	local prs number title attempt
+	local prs number title attempt failed=0
 
 	# List open PRs in this repo authored by any of the requested users.
 	#
@@ -108,7 +109,8 @@ process_repo() {
 			info "updating ${repo}#${number}: branch behind base (attempt ${attempt}/10)"
 			if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null; then
 				err "could not update branch for ${repo}#${number}"
-				return 1
+				failed=1
+				continue 2
 			fi
 			# Pause after each update so the push has a chance to (re)trigger
 			# workflows and GitHub can recompute the merge state before we recheck.
@@ -118,9 +120,12 @@ process_repo() {
 		# Forward the caller's options (plus the default method) to gh pr merge.
 		if ! \gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null; then
 			err "failed to merge ${repo}#${number}"
-			return 1
+			failed=1
+			continue
 		fi
 	done <<<"${prs}"
+
+	return "${failed}"
 }
 
 # Read the repo list on stdin; keep it out of the way of the gh calls below
