@@ -1,0 +1,6 @@
+{
+  "ignore": [
+    "git-squash-unpushed-commits-with-oldest-message",
+    "git-squash-unpushed-commits-with-same-message"
+  ]
+}
