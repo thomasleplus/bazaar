@@ -13,15 +13,20 @@ IFS=$'\n\t'
 
 # ANSI colour codes for log messages, blanked when NO_COLOR is set or the target
 # stream is not a terminal, so redirected output and pipes stay free of escape
-# sequences (see https://no-color.org/). info() writes progress to stdout; warn()
-# and err() write to stderr.
-info_col='' info_off='' warn_col='' err_col='' msg_off=''
+# sequences (see https://no-color.org/). info() writes progress to
+# stdout; err() write to stderr.
+info_col='' info_off='' err_col='' msg_off=''
 if [ -z "${NO_COLOR:-}" ]; then
-	if [ -t 1 ]; then info_col=$'\033[36m'; info_off=$'\033[0m'; fi
-	if [ -t 2 ]; then warn_col=$'\033[33m'; err_col=$'\033[31m'; msg_off=$'\033[0m'; fi
+	if [ -t 1 ]; then
+		info_col=$'\033[36m'
+		info_off=$'\033[0m'
+	fi
+	if [ -t 2 ]; then
+		err_col=$'\033[31m'
+		msg_off=$'\033[0m'
+	fi
 fi
 info() { echo "${info_col}$*${info_off}"; }
-warn() { >&2 echo "${warn_col}warn: $*${msg_off}"; }
 err() { >&2 echo "${err_col}$*${msg_off}"; }
 
 # Split arguments: options (leading "-") are forwarded to `gh pr merge`, the
@@ -31,8 +36,8 @@ opts=()
 authors=()
 for arg in "$@"; do
 	case "${arg}" in
-		-*) opts+=("${arg}") ;;
-		*) authors+=("${arg}") ;;
+	-*) opts+=("${arg}") ;;
+	*) authors+=("${arg}") ;;
 	esac
 done
 
@@ -46,7 +51,7 @@ fi
 has_method=false
 for o in ${opts[@]+"${opts[@]}"}; do
 	case "${o}" in
-		--merge | -m | --squash | -s | --rebase | -r) has_method=true ;;
+	--merge | -m | --squash | -s | --rebase | -r) has_method=true ;;
 	esac
 done
 "${has_method}" || opts+=(--merge)
