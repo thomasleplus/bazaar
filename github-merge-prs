@@ -5,6 +5,9 @@
 # forwarded verbatim to `gh pr merge`; the remaining arguments are the author
 # logins to match. Options that take a value must be given as --flag=value.
 # If no merge method (--merge/--squash/--rebase) is passed, --merge is used.
+# If a PR updates files under .github/workflows/ and the token lacks the
+# 'workflow' OAuth scope, the merge is retried once after adding that scope on
+# demand via 'gh auth refresh -s workflow' (a one-time interactive re-auth).
 # Usage: github-list-repos <user> ... | github-merge-prs [gh-merge-option ...] <author> ...
 # Example: github-list-repos me | github-merge-prs --admin --squash me 'dependabot[bot]'
 
@@ -72,6 +75,53 @@ pr_merge_state() {
 	echo "${state:-UNKNOWN}"
 }
 
+# Whether we've already gone through the one-time 'gh auth refresh' to add the
+# 'workflow' scope this run (see merge_pr). Set once we've attempted it, whether
+# it succeeded or not, so a batch full of workflow PRs re-prompts at most once.
+workflow_scope_tried=false
+
+# Merge one PR, forwarding the caller's gh options (plus the default method).
+# GitHub refuses to merge a PR that would create or update files under
+# .github/workflows/ unless the token carries the 'workflow' OAuth scope,
+# failing with "refusing to allow an OAuth App to create or update workflow ...
+# without `workflow` scope". We don't request that scope up front -- most PRs
+# never touch workflows and adding it needs an interactive re-auth -- so the
+# first PR that trips this error triggers a one-time 'gh auth refresh -s
+# workflow' and the merge is retried. Every other failure is surfaced as-is.
+merge_pr() {
+	local repo="$1" number="$2" out
+	if out="$(\gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null 2>&1)"; then
+		[ -n "${out}" ] && echo "${out}"
+		return 0
+	fi
+	# Only a missing 'workflow' scope is recoverable here; report anything else.
+	if ! grep -qiE 'workflow.? scope' <<<"${out}"; then
+		err "${out}"
+		return 1
+	fi
+	# Already tried adding the scope this run: nothing more we can do for this PR.
+	if "${workflow_scope_tried}"; then
+		err "${out}"
+		return 1
+	fi
+	workflow_scope_tried=true
+	info "${repo}#${number} touches a workflow file; adding the 'workflow' scope via 'gh auth refresh' (follow the browser prompt)"
+	# The device-code prompt needs a terminal, but the script's stdin is the repo
+	# list, so read the prompt from the controlling tty instead.
+	if ! \gh auth refresh -h github.com -s workflow </dev/tty; then
+		err "could not add the 'workflow' scope"
+		err "${out}"
+		return 1
+	fi
+	# Retry once now that the token should carry the scope.
+	if out="$(\gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null 2>&1)"; then
+		[ -n "${out}" ] && echo "${out}"
+		return 0
+	fi
+	err "${out}"
+	return 1
+}
+
 # Merge every open PR one repo has from the requested authors. A failure on an
 # individual PR (branch update or merge) is recorded and processing moves on to
 # the next PR, so one unmergeable PR doesn't skip the rest of the repo. Returns
@@ -122,8 +172,7 @@ process_repo() {
 			\sleep 3
 		done
 		info "merging ${repo}#${number}: ${title}"
-		# Forward the caller's options (plus the default method) to gh pr merge.
-		if ! \gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null; then
+		if ! merge_pr "${repo}" "${number}"; then
 			err "failed to merge ${repo}#${number}"
 			failed=1
 			continue
