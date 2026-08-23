@@ -7,8 +7,8 @@ set -euo pipefail
 IFS=$'\n\t'
 
 for user in "$@"; do
-	\gh api "users/${user}/repos" --paginate --jq '.[].clone_url'
+	\gh api "users/${user}/repos" --paginate --jq '.[].ssh_url'
 	for org in $(\gh api "users/${user}/orgs" --paginate --jq '.[].login'); do
-		\gh api "orgs/${org}/repos" --paginate --jq '.[].clone_url'
+		\gh api "orgs/${org}/repos" --paginate --jq '.[].ssh_url'
 	done
 done
