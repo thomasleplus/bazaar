@@ -231,6 +231,22 @@ github-create-labels owner/repo1 owner/repo2
 
 Requires the GitHub CLI (`gh`) to be installed and authenticated.
 
+## [github-list-failing-workflows](github-list-failing-workflows)
+
+Lists the workflows that are currently failing for each repository read from standard input. Repositories may be given as `owner/repo` or as clone URLs, so the output of `github-list-repos` can be piped straight in. For every active workflow, the most recent completed run (optionally restricted to a branch with `--branch`) is checked, and the workflow is reported when that run concluded in `failure`, `timed_out`, or `startup_failure`. Output is one tab-separated line per failing workflow (`owner/repo`, workflow name, conclusion, run URL).
+
+```shell
+github-list-repos thomasleplus garcialeplus wotlocom | github-list-failing-workflows --branch main
+```
+
+Use `--workflow` to report only selected workflows, matched by name, filename, or numeric id; repeat the option to select more than one:
+
+```shell
+github-list-repos thomasleplus | github-list-failing-workflows --branch main --workflow "Lint Code Base" --workflow codeql-analysis.yml
+```
+
+Requires the GitHub CLI (`gh`) to be installed and authenticated.
+
 ## [github-list-repos](github-list-repos)
 
 Lists all Git clone URLs for repositories belonging to specified GitHub users. This includes both personal repositories and organization repositories the user belongs to.

@@ -1,0 +1,166 @@
+#!/bin/bash
+# Lists the workflows that are currently failing for each repository read from
+# stdin. Repositories may be given as OWNER/REPO or as clone URLs (https or
+# ssh); anything else on the line is normalised down to OWNER/REPO, so the
+# output of github-list-repos can be piped straight in.
+#
+# For every active workflow in a repo, the most recent completed run (optionally
+# restricted to a branch with --branch) is inspected and the workflow is
+# reported when that run concluded in failure, timed_out or startup_failure --
+# i.e. the workflow is broken right now, not merely broken at some point in the
+# past. Pass --workflow to report only selected workflows, matched by name,
+# filename or numeric id; repeat it to select more than one. Output is one
+# tab-separated line per failing workflow:
+#   OWNER/REPO<TAB>WORKFLOW<TAB>CONCLUSION<TAB>RUN_URL
+# Progress and errors go to stderr, so stdout stays a clean, parseable list.
+# The exit status is the number of repos that could not be inspected (capped at
+# 255), so 0 means every repo was checked cleanly.
+# Usage: github-list-repos <user> ... | github-list-failing-workflows [--branch <name>] [--workflow <name> ...]
+# Example: github-list-repos me | github-list-failing-workflows --branch main --workflow "Lint Code Base"
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ANSI colour for stderr, blanked when NO_COLOR is set or stderr is not a
+# terminal, so redirected output stays free of escape sequences (see
+# https://no-color.org/). Only stderr is coloured; stdout is machine-readable
+# data and must never carry escape sequences.
+err_col='' msg_off=''
+if [ -z "${NO_COLOR:-}" ] && [ -t 2 ]; then
+	err_col=$'\033[31m'
+	msg_off=$'\033[0m'
+fi
+err() { >&2 echo "${err_col}$*${msg_off}"; }
+
+# Parse options. This command takes no positional arguments -- the repositories
+# are read from stdin. --branch/-b restricts to a single branch; --workflow/-w
+# restricts to selected workflows (matched by name, filename or id) and may be
+# repeated. Both accept "--flag value" and "--flag=value".
+branch=''
+wanted=()
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--branch=* | -b=*) branch="${1#*=}" ;;
+	--branch | -b)
+		shift
+		[ "$#" -gt 0 ] || {
+			err "--branch requires a value"
+			exit 2
+		}
+		branch="$1"
+		;;
+	--workflow=* | -w=*) wanted+=("${1#*=}") ;;
+	--workflow | -w)
+		shift
+		[ "$#" -gt 0 ] || {
+			err "--workflow requires a value"
+			exit 2
+		}
+		wanted+=("$1")
+		;;
+	--)
+		shift
+		break
+		;;
+	-*)
+		err "unknown option: $1"
+		exit 2
+		;;
+	*)
+		err "unexpected argument: $1 (repositories are read from stdin)"
+		exit 2
+		;;
+	esac
+	shift
+done
+if [ "$#" -gt 0 ]; then
+	err "unexpected argument: $1 (repositories are read from stdin)"
+	exit 2
+fi
+
+# Query for the workflow-runs endpoint: we only ever want the single most recent
+# completed run, optionally restricted to one branch. The fields are passed as
+# gh -f flags (with an explicit GET, since -f would otherwise switch gh to POST)
+# so gh URL-encodes them into the query string for us.
+runs_args=(-X GET -f status=completed -f per_page=1)
+[ -n "${branch}" ] && runs_args+=(-f "branch=${branch}")
+
+# Given the latest completed run, emit "<conclusion>\t<url>" only when it failed.
+# A workflow with no matching run yields an empty (null) .workflow_runs[0], which
+# the select drops without error, so healthy workflows produce nothing.
+failing_jq='.workflow_runs[0]
+	| select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")
+	| "\(.conclusion)\t\(.html_url)"'
+
+# Whether a workflow is selected by the --workflow filters. With no filters,
+# every workflow is selected; otherwise a workflow matches when a filter value
+# equals its id ($1), its name ($2) or its filename ($3, the basename of its
+# path).
+wanted_workflow() {
+	[ "${#wanted[@]}" -eq 0 ] && return 0
+	local w
+	for w in "${wanted[@]}"; do
+		if [ "${w}" = "$1" ] || [ "${w}" = "$2" ] || [ "${w}" = "$3" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Report every currently-failing workflow in one repo. Each gh call runs with
+# </dev/null so it never consumes the repo list on stdin. A failure listing the
+# repo's workflows skips the whole repo (returns 1); a failure reading one
+# workflow's runs skips that workflow but still checks the rest.
+process_repo() {
+	local repo="$1"
+	local workflows wf_id name path result conclusion url failed=0
+
+	if ! workflows="$(\gh api "repos/${repo}/actions/workflows" --paginate \
+		--jq '.workflows[] | select(.state == "active") | "\(.id)\t\(.name)\t\(.path)"' \
+		</dev/null 2>/dev/null)"; then
+		err "could not list workflows for ${repo}, skipping"
+		return 1
+	fi
+
+	[ -n "${workflows}" ] || return 0
+
+	while IFS=$'\t' read -r wf_id name path; do
+		[ -n "${wf_id}" ] || continue
+		# Honour --workflow filters (by name, filename or id) before spending an
+		# API call on this workflow's runs.
+		wanted_workflow "${wf_id}" "${name}" "${path##*/}" || continue
+		if ! result="$(\gh api "repos/${repo}/actions/workflows/${wf_id}/runs" \
+			"${runs_args[@]}" --jq "${failing_jq}" </dev/null 2>/dev/null)"; then
+			err "could not read runs for ${repo} workflow '${name}', skipping"
+			failed=1
+			continue
+		fi
+		[ -n "${result}" ] || continue
+		IFS=$'\t' read -r conclusion url <<<"${result}"
+		printf '%s\t%s\t%s\t%s\n' "${repo}" "${name}" "${conclusion}" "${url}"
+	done <<<"${workflows}"
+
+	return "${failed}"
+}
+
+# Read the repo list on stdin. Each repo whose inspection hits a gh failure bumps
+# the counter; the script exits with that count so 0 means every repo was handled
+# cleanly.
+errors=0
+while IFS= read -r line; do
+	[ -n "${line}" ] || continue
+	# Normalise clone URLs (https or ssh) down to OWNER/REPO; leave OWNER/REPO as-is.
+	repo="${line%.git}"
+	repo="${repo#https://github.com/}"
+	repo="${repo#http://github.com/}"
+	repo="${repo#ssh://git@github.com/}"
+	repo="${repo#git@github.com:}"
+
+	if ! process_repo "${repo}"; then
+		errors=$((errors + 1))
+	fi
+done
+
+# Cap at 255 so a large batch can't wrap the shell's 8-bit exit code back to 0.
+[ "${errors}" -gt 255 ] && errors=255
+exit "${errors}"
