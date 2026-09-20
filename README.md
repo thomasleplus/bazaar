@@ -205,7 +205,8 @@ cat file.txt | replace-literal -f 'foo' -t 'bar'
 
 ## [git-repeat-last-commit](git-repeat-last-commit)
 
-Commits the staged changes with the exact details of the last commit on the current branch: the message is reused verbatim (subject, body and trailers), together with the original author and author date. Only the committer and the commit date are new, as they are for a cherry-pick or a rebase. This is handy when the same change has to land a second time: a fix replayed by hand on another branch, a dependency bump repeated across sibling repositories, or a sweeping edit split into several commits that should all read the same.
+Commits the staged changes with the exact details of the last commit on the current branch: the message is reused verbatim (subject, body and trailers), together with the original author and author date. Only the committer and the commit date are new, as they are for a cherry-pick or a rebase.
+This is handy when the same change has to land a second time: a fix replayed by hand on another branch, a dependency bump repeated across sibling repositories, or a sweeping edit split into several commits that should all read the same.
 
 ```shell
 git add -p
