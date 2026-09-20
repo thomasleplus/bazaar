@@ -203,6 +203,23 @@ Or pipe from stdin:
 cat file.txt | replace-literal -f 'foo' -t 'bar'
 ```
 
+## [git-repeat-last-commit](git-repeat-last-commit)
+
+Commits the staged changes with the exact details of the last commit on the current branch: the message is reused verbatim (subject, body and trailers), together with the original author and author date. Only the committer and the commit date are new, as they are for a cherry-pick or a rebase. This is handy when the same change has to land a second time: a fix replayed by hand on another branch, a dependency bump repeated across sibling repositories, or a sweeping edit split into several commits that should all read the same.
+
+```shell
+git add -p
+git-repeat-last-commit
+```
+
+Extra arguments go straight to `git commit`, so `--reset-author` (take over authorship and date), `--no-verify` or `-S` work as usual:
+
+```shell
+git-repeat-last-commit --reset-author
+```
+
+Nothing is ever staged for you: with an empty index the script stops instead of recording an empty twin of the last commit.
+
 ## [git-squash-unpushed-commits-with-oldest-message](git-squash-unpushed-commits-with-oldest-message)
 
 Squashes all unpushed commits on the current branch into a single commit, keeping the message from the oldest commit. This is useful for cleaning up a feature branch before merging.

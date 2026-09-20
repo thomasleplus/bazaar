@@ -1,0 +1,55 @@
+#!/bin/bash
+# Commits the staged changes with the exact details of the last commit on the
+# current branch: the message is reused verbatim (subject, body and trailers)
+# together with the original author and author date. Only the committer and the
+# commit date are new, which is also what git records for a cherry-pick or a
+# rebase -- those two describe who ran this script and when, and cannot be
+# copied from the earlier commit.
+#
+# Useful whenever the same change has to land a second time: a fix replayed by
+# hand on another branch, a dependency bump repeated across sibling repos, or a
+# sweeping edit split into several commits that should all read the same.
+#
+# Nothing is ever staged for you. With an empty index the script stops instead
+# of recording an empty twin of the last commit. Any extra argument is passed
+# straight to git commit, so --reset-author (take over authorship and date),
+# --no-verify or -S work as usual.
+# Usage: git-repeat-last-commit [<git-commit-option> ...]
+# Example: git add -p && git-repeat-last-commit
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ANSI colour for stderr, blanked when NO_COLOR is set or stderr is not a
+# terminal, so redirected output stays free of escape sequences (see
+# https://no-color.org/).
+err_col='' msg_off=''
+if [ -z "${NO_COLOR:-}" ] && [ -t 2 ]; then
+	err_col=$'\033[31m'
+	msg_off=$'\033[0m'
+fi
+err() { >&2 echo "${err_col}$*${msg_off}"; }
+
+# A working tree is required: --is-inside-work-tree prints false in a bare repo
+# and fails outside a repo altogether, and neither case has an index to commit.
+if [ "$(git rev-parse --is-inside-work-tree 2>/dev/null || true)" != "true" ]; then
+	err "Not inside a Git working tree."
+	exit 1
+fi
+
+# There must be a commit to repeat: HEAD is unborn on a branch with no history.
+if ! git rev-parse --verify --quiet 'HEAD^{commit}' >/dev/null; then
+	err "The current branch has no commit to repeat."
+	exit 1
+fi
+
+# Compare the index to HEAD rather than the working tree: unstaged edits are
+# deliberately left out, exactly as a plain git commit would leave them.
+if git diff --cached --quiet; then
+	err "Nothing staged to commit. Stage the changes first, e.g. with git add."
+	exit 1
+fi
+
+# -C reuses the whole of HEAD's message and authorship without opening an
+# editor: the same details, not a copy typed out again.
+git commit -C HEAD "$@"
