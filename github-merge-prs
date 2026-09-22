@@ -1,14 +1,46 @@
 #!/bin/bash
-# Merges all open pull requests authored by the given GitHub users.
+# Merges all open pull requests authored by the given GitHub users, doing as
+# little as possible to get each one there.
+#
 # Reads the list of repositories (clone URLs or OWNER/REPO) from stdin.
-# Any argument starting with "-" (e.g. --admin, --squash, --delete-branch) is
-# forwarded verbatim to `gh pr merge`; the remaining arguments are the author
-# logins to match. Options that take a value must be given as --flag=value.
-# If no merge method (--merge/--squash/--rebase) is passed, --merge is used.
+#
+# Each matching PR escalates through the cheapest steps first and stops as soon
+# as GitHub is willing to merge on its own:
+#   1. triage  -- merge conflicts and drafts are reported and skipped (neither
+#                 gets better by merging harder, not even with --admin); a PR
+#                 that is already mergeable is merged straight away.
+#   2. arm     -- enable auto-merge, so whichever later step finally satisfies
+#                 branch protection lets GitHub merge the PR unattended.
+#   3. update  -- update the head branch when it is behind the base. Done
+#                 before both approval steps below, because the resulting push
+#                 supersedes in-flight check runs and, when branch protection
+#                 dismisses stale reviews, discards approvals.
+#   4. approve -- approve Actions runs held for manual approval.
+#   5. review  -- add an approving review when one is required and missing.
+#   6. wait    -- poll until GitHub merges the armed PR (see --timeout).
+#   7. force   -- only with --admin, and only if all of the above fell short,
+#                 merge with administrator privileges.
+#
+# Script options (not forwarded to gh):
+#   --admin               allow step 7; also turns waiting on by default
+#   --wait / --no-wait    wait for checks even without --admin, or never wait
+#   --timeout=SECONDS     overall wait budget per PR (default 600)
+#   --idle-timeout=SEC    give up waiting once no check has changed state for
+#                         this long and none is still running (default 120)
+# Any other argument starting with "-" (e.g. --squash, --delete-branch) is
+# forwarded verbatim to `gh pr merge`; the rest are the author logins to match.
+# Options that take a value must be given as --flag=value. If no merge method
+# (--merge/--squash/--rebase) is passed, --merge is used.
+#
+# Deployment approvals for protected environments are deliberately NOT granted:
+# approving a production deployment on someone's behalf is a bigger call than
+# any merge, so those PRs are reported as blocked instead.
+#
 # If a PR updates files under .github/workflows/ and the token lacks the
 # 'workflow' OAuth scope, the merge is retried once after adding that scope on
 # demand via 'gh auth refresh -s workflow' (a one-time interactive re-auth).
-# Usage: github-list-repos <user> ... | github-merge-prs [gh-merge-option ...] <author> ...
+#
+# Usage: github-list-repos <user> ... | github-merge-prs [option ...] <author> ...
 # Example: github-list-repos me | github-merge-prs --admin --squash me 'dependabot[bot]'
 
 set -euo pipefail
@@ -16,12 +48,17 @@ IFS=$'\n\t'
 
 # ANSI colour codes for log messages, blanked when NO_COLOR is set or the target
 # stream is not a terminal, so redirected output and pipes stay free of escape
-# sequences (see https://no-color.org/). info() writes progress to
-# stdout; err() write to stderr.
-info_col='' info_off='' err_col='' msg_off=''
+# sequences (see https://no-color.org/). info(), warn() and the summary write
+# progress to stdout; err() writes to stderr. warn() marks a PR we are leaving
+# unmerged on purpose: not a failure, but not something to skim past either,
+# since clearing it needs a human. It is the same yellow the summary groups
+# those outcomes under.
+info_col='' ok_col='' warn_col='' info_off='' err_col='' msg_off=''
 if [ -z "${NO_COLOR:-}" ]; then
 	if [ -t 1 ]; then
 		info_col=$'\033[36m'
+		ok_col=$'\033[32m'
+		warn_col=$'\033[33m'
 		info_off=$'\033[0m'
 	fi
 	if [ -t 2 ]; then
@@ -30,49 +67,144 @@ if [ -z "${NO_COLOR:-}" ]; then
 	fi
 fi
 info() { echo "${info_col}$*${info_off}"; }
+warn() { echo "${warn_col}$*${info_off}"; }
 err() { >&2 echo "${err_col}$*${msg_off}"; }
 
-# Split arguments: options (leading "-") are forwarded to `gh pr merge`, the
-# rest are the author logins to match. GitHub usernames never start with "-",
-# so this classification is unambiguous.
-opts=()
+# Split arguments: the script's own options are consumed here, every other
+# option (leading "-") is forwarded to `gh pr merge`, and the rest are the
+# author logins to match. GitHub usernames never start with "-", so this
+# classification is unambiguous.
+merge_opts=()
 authors=()
+force=false
+wait_mode=auto
+timeout=600
+idle_timeout=120
 for arg in "$@"; do
 	case "${arg}" in
-	-*) opts+=("${arg}") ;;
+	--admin) force=true ;;
+	--wait) wait_mode=always ;;
+	--no-wait) wait_mode=never ;;
+	--timeout=*) timeout="${arg#*=}" ;;
+	--idle-timeout=*) idle_timeout="${arg#*=}" ;;
+	-*) merge_opts+=("${arg}") ;;
 	*) authors+=("${arg}") ;;
 	esac
 done
 
 if [ "${#authors[@]}" -eq 0 ]; then
-	err "usage: github-merge-prs [gh-merge-option ...] <author> [author ...]  # repos on stdin"
+	err "usage: github-merge-prs [option ...] <author> [author ...]  # repos on stdin"
 	exit 1
 fi
+case "${timeout}:${idle_timeout}" in
+*[!0-9:]* | :* | *: | *::*)
+	err "--timeout and --idle-timeout take a number of seconds"
+	exit 1
+	;;
+esac
+
+# Wait only when the answer changes what we do: without --admin there is nothing
+# left to escalate to, so arming auto-merge is the whole job and GitHub can
+# finish it after we have moved on.
+case "${wait_mode}" in
+always) do_wait=true ;;
+never) do_wait=false ;;
+*) do_wait="${force}" ;;
+esac
 
 # gh pr merge needs a merge method in non-interactive mode; default to --merge
 # unless the caller already forwarded one.
 has_method=false
-for o in ${opts[@]+"${opts[@]}"}; do
+for o in ${merge_opts[@]+"${merge_opts[@]}"}; do
 	case "${o}" in
 	--merge | -m | --squash | -s | --rebase | -r) has_method=true ;;
 	esac
 done
-"${has_method}" || opts+=(--merge)
+"${has_method}" || merge_opts+=(--merge)
 
-# Print the PR's mergeStateStatus, polling briefly while GitHub recomputes it
+# Outcome of every PR we touched, as "status<TAB>repo#number<TAB>detail", for
+# the end-of-run summary. Recorded from the main loop's shell (no subshells), so
+# the array survives.
+#
+# Every path through process_pr records exactly once, so record() is also the
+# point where a PR stops being "in flight": current_pr names the PR we are part
+# way through, and is what lets an interrupted run report the one it was holding
+# rather than silently dropping it.
+summary_lines=()
+current_pr=''
+record() {
+	summary_lines+=("$1"$'\t'"$2"$'\t'"$3")
+	current_pr=''
+}
+
+# Login of the authenticated user, resolved on first use. Used to skip the
+# review step on our own PRs: GitHub rejects self-approval outright, so asking
+# would only produce a confusing error.
+viewer=''
+viewer_login() {
+	[ -n "${viewer}" ] || viewer="$(\gh api user --jq .login </dev/null 2>/dev/null || echo '?')"
+	echo "${viewer}"
+}
+
+# Print one PR's mergeability as "state<TAB>mergeStateStatus<TAB>reviewDecision<TAB>
+# auto<TAB>headRefOid", polling briefly while GitHub recomputes the merge state
 # (it reports UNKNOWN until the background mergeability check settles).
-pr_merge_state() {
-	local repo="$1" number="$2" i state
+pr_status() {
+	local repo="$1" number="$2" i out state
 	for ((i = 0; i < 5; i++)); do
-		state="$(\gh pr view "${number}" --repo "${repo}" \
-			--json mergeStateStatus --jq .mergeStateStatus </dev/null 2>/dev/null || true)"
-		if [ -n "${state}" ] && [ "${state}" != "UNKNOWN" ]; then
-			echo "${state}"
+		out="$(\gh pr view "${number}" --repo "${repo}" \
+			--json state,mergeStateStatus,reviewDecision,autoMergeRequest,headRefOid \
+			--jq '[.state, (.mergeStateStatus // "UNKNOWN"), (.reviewDecision // "NONE"),
+			       (if .autoMergeRequest then "auto" else "-" end), .headRefOid] | @tsv' \
+			</dev/null 2>/dev/null || true)"
+		state="$(cut -f2 <<<"${out}")"
+		if [ -n "${out}" ] && [ "${state}" != "UNKNOWN" ]; then
+			echo "${out}"
 			return 0
 		fi
 		\sleep 2
 	done
-	echo "${state:-UNKNOWN}"
+	[ -n "${out}" ] || out=$'OPEN\tUNKNOWN\tNONE\t-\t'
+	echo "${out}"
+}
+
+# Print one PR's check rollup as "pending<TAB>total<TAB>fingerprint". The
+# fingerprint folds the head commit and every check's name/status/conclusion
+# into one string, so an unchanged fingerprint means nothing moved since the
+# last poll. Commit statuses are mapped onto the check-run vocabulary so both
+# kinds compare the same way.
+pr_checks() {
+	local repo="$1" number="$2"
+	\gh pr view "${number}" --repo "${repo}" --json headRefOid,statusCheckRollup </dev/null 2>/dev/null |
+		\jq -r '
+			((.statusCheckRollup // [])
+			 | map(if .__typename == "CheckRun"
+			       then {n: .name, s: .status, c: (.conclusion // "")}
+			       else {n: .context, s: (if .state == "PENDING" then "IN_PROGRESS" else "COMPLETED" end),
+			             c: (.state // "")} end)) as $c
+			| [ ($c | map(select(.s != "COMPLETED")) | length),
+			    ($c | length),
+			    (.headRefOid + " " + ($c | map("\(.n):\(.s):\(.c)") | sort | join(","))) ]
+			| @tsv' 2>/dev/null || echo $'0\t0\t?'
+}
+
+# Approve Actions runs parked on "action_required" for this PR's head commit,
+# which is how GitHub holds workflow runs from outside contributors. Runs parked
+# on "waiting" are environment deployment approvals and are left alone on
+# purpose (see the header). Entirely best-effort: a repo with Actions disabled,
+# or a token without the rights, just means there is nothing to approve here.
+approve_workflow_runs() {
+	local repo="$1" sha="$2" runs id approved=0
+	runs="$(\gh api "repos/${repo}/actions/runs?status=action_required&per_page=100" </dev/null 2>/dev/null |
+		\jq -r --arg sha "${sha}" '.workflow_runs[]? | select(.head_sha == $sha) | .id' 2>/dev/null || true)"
+	[ -n "${runs}" ] || return 0
+	for id in ${runs}; do
+		if \gh api -X POST "repos/${repo}/actions/runs/${id}/approve" </dev/null >/dev/null 2>&1; then
+			approved=$((approved + 1))
+		fi
+	done
+	[ "${approved}" -eq 0 ] || info "  approved ${approved} workflow run(s) awaiting approval"
+	return 0
 }
 
 # Whether we've already gone through the one-time 'gh auth refresh' to add the
@@ -80,7 +212,8 @@ pr_merge_state() {
 # it succeeded or not, so a batch full of workflow PRs re-prompts at most once.
 workflow_scope_tried=false
 
-# Merge one PR, forwarding the caller's gh options (plus the default method).
+# Merge one PR, forwarding the caller's gh options (plus the default method) and
+# any extra arguments given here, such as --auto or --admin.
 # GitHub refuses to merge a PR that would create or update files under
 # .github/workflows/ unless the token carries the 'workflow' OAuth scope,
 # failing with "refusing to allow an OAuth App to create or update workflow ...
@@ -88,20 +221,24 @@ workflow_scope_tried=false
 # never touch workflows and adding it needs an interactive re-auth -- so the
 # first PR that trips this error triggers a one-time 'gh auth refresh -s
 # workflow' and the merge is retried. Every other failure is surfaced as-is.
+# The failing gh output is left in merge_err for the caller to report.
+merge_err=''
 merge_pr() {
 	local repo="$1" number="$2" out
-	if out="$(\gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null 2>&1)"; then
+	shift 2
+	merge_err=''
+	if out="$(\gh pr merge "${number}" --repo "${repo}" "${merge_opts[@]}" "$@" </dev/null 2>&1)"; then
 		[ -n "${out}" ] && echo "${out}"
 		return 0
 	fi
 	# Only a missing 'workflow' scope is recoverable here; report anything else.
 	if ! grep -qiE 'workflow.? scope' <<<"${out}"; then
-		err "${out}"
+		merge_err="${out}"
 		return 1
 	fi
 	# Already tried adding the scope this run: nothing more we can do for this PR.
 	if "${workflow_scope_tried}"; then
-		err "${out}"
+		merge_err="${out}"
 		return 1
 	fi
 	workflow_scope_tried=true
@@ -109,28 +246,247 @@ merge_pr() {
 	# The device-code prompt needs a terminal, but the script's stdin is the repo
 	# list, so read the prompt from the controlling tty instead.
 	if ! \gh auth refresh -h github.com -s workflow </dev/tty; then
-		err "could not add the 'workflow' scope"
-		err "${out}"
+		merge_err="could not add the 'workflow' scope"$'\n'"${out}"
 		return 1
 	fi
 	# Retry once now that the token should carry the scope.
-	if out="$(\gh pr merge "${number}" --repo "${repo}" "${opts[@]}" </dev/null 2>&1)"; then
+	if out="$(\gh pr merge "${number}" --repo "${repo}" "${merge_opts[@]}" "$@" </dev/null 2>&1)"; then
 		[ -n "${out}" ] && echo "${out}"
 		return 0
 	fi
-	err "${out}"
+	merge_err="${out}"
 	return 1
 }
 
-# Merge every open PR one repo has from the requested authors. A failure on an
-# individual PR (branch update or merge) is recorded and processing moves on to
-# the next PR, so one unmergeable PR doesn't skip the rest of the repo. Returns
-# non-zero if any PR failed, so the caller can count the repo and move on.
+# Poll an armed PR until GitHub merges it or until waiting stops being useful.
+# Exit status says why we stopped:
+#   0 merged   1 ready to merge now   2 closed without merging
+#   3 conflicts appeared   4 no checks will ever run   5 stalled   6 timed out
+# The two deadlines matter for different failure modes: the global one bounds a
+# check suite that genuinely takes forever, while the idle one catches the case
+# where the workflows we are waiting on were never triggered at all (path
+# filters, fork restrictions), which no amount of waiting fixes.
+wait_for_pr() {
+	local repo="$1" number="$2"
+	local deadline=$((SECONDS + timeout)) last_change="${SECONDS}" last_fp=''
+	local status state merge_state checks pending total fp
+	while :; do
+		status="$(pr_status "${repo}" "${number}")"
+		state="$(cut -f1 <<<"${status}")"
+		merge_state="$(cut -f2 <<<"${status}")"
+		case "${state}" in
+		MERGED) return 0 ;;
+		CLOSED) return 2 ;;
+		esac
+		case "${merge_state}" in
+		CLEAN | HAS_HOOKS) return 1 ;;
+		DIRTY) return 3 ;;
+		esac
+		checks="$(pr_checks "${repo}" "${number}")"
+		pending="$(cut -f1 <<<"${checks}")"
+		total="$(cut -f2 <<<"${checks}")"
+		fp="$(cut -f3 <<<"${checks}")"
+		# Blocked with no checks at all: a required check is configured but no run
+		# exists for this commit, so the block can never clear on its own.
+		if [ "${merge_state}" = "BLOCKED" ] && [ "${total}" -eq 0 ]; then
+			return 4
+		fi
+		if [ "${fp}" != "${last_fp}" ]; then
+			last_fp="${fp}"
+			last_change="${SECONDS}"
+		elif [ "${pending}" -eq 0 ] && [ $((SECONDS - last_change)) -ge "${idle_timeout}" ]; then
+			return 5
+		fi
+		[ "${SECONDS}" -lt "${deadline}" ] || return 6
+		\sleep 10
+	done
+}
+
+# Take one PR as far towards merged as it can go without forcing, then force it
+# only if --admin was passed. Records exactly one summary line per PR. Returns
+# non-zero only on a genuine failure (a gh call we expected to work did not), so
+# a PR we legitimately left alone doesn't count as an error.
+process_pr() {
+	local repo="$1" number="$2" author="$3" draft="$4" merge_state="$5" review="$6" auto="$7" title="$8"
+	local ref="${repo}#${number}" status state sha attempt armed=false rc
+	current_pr="${ref}"
+
+	if [ "${draft}" = "draft" ]; then
+		warn "skipping ${ref}: draft"
+		record skipped "${ref}" "draft"
+		return 0
+	fi
+	case "${merge_state}" in
+	DIRTY)
+		warn "skipping ${ref}: merge conflicts with the base branch"
+		record skipped "${ref}" "merge conflicts (--admin cannot override these)"
+		return 0
+		;;
+	CLEAN | HAS_HOOKS)
+		info "merging ${ref}: ${title}"
+		if merge_pr "${repo}" "${number}"; then
+			record merged "${ref}" "already mergeable"
+			return 0
+		fi
+		err "${merge_err}"
+		err "failed to merge ${ref}"
+		record failed "${ref}" "merge failed"
+		return 1
+		;;
+	esac
+
+	info "unblocking ${ref}: ${title}"
+
+	# 1. Arm auto-merge first, so any step below can be the one that lets GitHub
+	# merge without us. Not every repo allows it (the setting is off, or the
+	# merge method is not permitted); that is not fatal, we just have to finish
+	# the job ourselves.
+	if [ "${auto}" = "auto" ]; then
+		armed=true
+	elif merge_pr "${repo}" "${number}" --auto >/dev/null; then
+		armed=true
+		info "  auto-merge enabled"
+	else
+		info "  could not enable auto-merge, continuing"
+	fi
+
+	# 2. Update the head branch while it is behind the base. Capped low on
+	# purpose: with auto-merge armed there is no need to win a race against a
+	# busy base branch, GitHub will merge whenever the PR does come up to date.
+	status="$(pr_status "${repo}" "${number}")"
+	for ((attempt = 1; attempt <= 3; attempt++)); do
+		[ "$(cut -f2 <<<"${status}")" = "BEHIND" ] || break
+		info "  updating branch (behind base, attempt ${attempt}/3)"
+		if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null >/dev/null; then
+			err "could not update branch for ${ref}"
+			record failed "${ref}" "branch update failed"
+			return 1
+		fi
+		# Pause after each update so the push has a chance to (re)trigger
+		# workflows and GitHub can recompute the merge state before we recheck.
+		\sleep 3
+		status="$(pr_status "${repo}" "${number}")"
+	done
+
+	# 3. Approve held workflow runs, now that the head commit has settled: doing
+	# this before the update above would approve runs the push then supersedes.
+	sha="$(cut -f5 <<<"${status}")"
+	[ -z "${sha}" ] || approve_workflow_runs "${repo}" "${sha}"
+
+	# 4. Approve the PR if a review is what is missing. Re-read the decision
+	# rather than trusting the listing, since the branch update may have
+	# dismissed an approval that was there when we started.
+	review="$(cut -f3 <<<"${status}")"
+	if [ "${review}" = "REVIEW_REQUIRED" ]; then
+		if [ "${author}" = "$(viewer_login)" ]; then
+			info "  review required but this is our own PR; GitHub forbids self-approval"
+		elif \gh pr review "${number}" --repo "${repo}" --approve </dev/null >/dev/null 2>&1; then
+			info "  approving review added"
+		else
+			info "  could not add an approving review"
+		fi
+	fi
+
+	# 5. Everything cheap has been tried. See where that leaves us.
+	status="$(pr_status "${repo}" "${number}")"
+	state="$(cut -f1 <<<"${status}")"
+	merge_state="$(cut -f2 <<<"${status}")"
+	if [ "${state}" = "MERGED" ]; then
+		info "  merged"
+		record merged "${ref}" "merged after unblocking"
+		return 0
+	fi
+
+	rc=1
+	if [ "${merge_state}" != "CLEAN" ] && [ "${merge_state}" != "HAS_HOOKS" ]; then
+		if ! "${do_wait}"; then
+			if "${armed}"; then
+				warn "  auto-merge armed, leaving it to GitHub"
+				record armed "${ref}" "auto-merge will merge it once checks pass"
+				return 0
+			fi
+			warn "  still ${merge_state}; not waiting"
+			record blocked "${ref}" "still ${merge_state}, not waiting"
+			return 0
+		fi
+		info "  waiting for checks (up to ${timeout}s, or ${idle_timeout}s without progress)"
+		rc=0
+		wait_for_pr "${repo}" "${number}" || rc=$?
+	fi
+
+	case "${rc}" in
+	0)
+		info "  merged"
+		record merged "${ref}" "merged after unblocking"
+		return 0
+		;;
+	1) ;; # mergeable now, fall through to the plain merge below
+	2)
+		warn "  closed without merging"
+		record blocked "${ref}" "closed without merging"
+		return 0
+		;;
+	3)
+		warn "  merge conflicts appeared while waiting"
+		record skipped "${ref}" "merge conflicts appeared while waiting"
+		return 0
+		;;
+	esac
+
+	# Mergeable at last: merge it ourselves. Auto-merge would get there too, but
+	# only on the next event, and we already know the requirements are met.
+	if [ "${rc}" -eq 1 ]; then
+		if merge_pr "${repo}" "${number}"; then
+			record merged "${ref}" "merged after unblocking"
+			return 0
+		fi
+		err "${merge_err}"
+	fi
+
+	# Still not mergeable. Describe why, then force only if asked to. Re-read the
+	# state first so the reason reflects where the wait left the PR rather than
+	# where it started.
+	local why
+	[ "${rc}" -eq 1 ] || merge_state="$(cut -f2 <<<"$(pr_status "${repo}" "${number}")")"
+	case "${rc}" in
+	1) why="became mergeable but the merge failed" ;;
+	4) why="required checks configured but no run exists for this commit" ;;
+	5) why="checks stopped progressing while ${merge_state}" ;;
+	6) why="timed out after ${timeout}s while ${merge_state}" ;;
+	*) why="still ${merge_state}" ;;
+	esac
+
+	if ! "${force}"; then
+		warn "  ${why}; not forcing (pass --admin to override)"
+		if "${armed}" && [ "${rc}" -ne 1 ]; then
+			record armed "${ref}" "${why}; auto-merge still armed"
+		else
+			record blocked "${ref}" "${why}"
+		fi
+		return 0
+	fi
+
+	warn "  ${why}; merging with administrator privileges"
+	if merge_pr "${repo}" "${number}" --admin; then
+		record forced "${ref}" "${why}"
+		return 0
+	fi
+	err "${merge_err}"
+	err "failed to merge ${ref}"
+	record failed "${ref}" "${why}; admin merge failed"
+	return 1
+}
+
+# Process every open PR one repo has from the requested authors. A failure on an
+# individual PR is recorded and processing moves on to the next PR, so one
+# unmergeable PR doesn't skip the rest of the repo. Returns non-zero if any PR
+# failed, so the caller can count the repo and move on.
 process_repo() {
 	local repo="$1"
-	local prs number title attempt failed=0
+	local prs number author draft merge_state review auto title failed=0
 
-	# List open PRs in this repo authored by any of the requested users.
+	# List open PRs in this repo authored by any of the requested users, pulling
+	# everything triage needs in the same call.
 	#
 	# Identity is matched ONLY against .author.login -- the account GitHub
 	# recorded as opening the PR. That value cannot be spoofed: nobody can open
@@ -142,50 +498,111 @@ process_repo() {
 	# side, otherwise a human who registered the username "dependabot" would be
 	# accepted in place of the genuine "app/dependabot" bot.
 	if ! prs="$(\gh pr list --repo "${repo}" --state open --limit 1000 \
-		--json number,title,author </dev/null |
+		--json number,title,author,isDraft,mergeStateStatus,reviewDecision,autoMergeRequest </dev/null |
 		\jq -r --args '
 			($ARGS.positional | map(if endswith("[bot]") then "app/" + .[0:-5] else . end)) as $wanted
 			| .[]
 			| select(.author.login as $l | $wanted | index($l))
-			| "\(.number)\t\(.title)"' "${authors[@]}")"; then
+			| [ .number,
+			    .author.login,
+			    (if .isDraft then "draft" else "-" end),
+			    (.mergeStateStatus // "UNKNOWN"),
+			    (.reviewDecision // "NONE"),
+			    (if .autoMergeRequest then "auto" else "-" end),
+			    .title ]
+			| @tsv' "${authors[@]}")"; then
 		err "could not list PRs for ${repo}, skipping"
+		record failed "${repo}" "could not list pull requests"
 		return 1
 	fi
 
 	[ -n "${prs}" ] || return 0
 
-	while IFS=$'\t' read -r number title; do
+	while IFS=$'\t' read -r number author draft merge_state review auto title; do
 		[ -n "${number}" ] || continue
-		# When branch protection requires an up-to-date branch, the PR shows as
-		# BEHIND. Update it (merging in the base) and re-check, up to 10 times,
-		# before attempting the merge.
-		for ((attempt = 1; attempt <= 10; attempt++)); do
-			[ "$(pr_merge_state "${repo}" "${number}")" = "BEHIND" ] || break
-			info "updating ${repo}#${number}: branch behind base (attempt ${attempt}/10)"
-			if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null; then
-				err "could not update branch for ${repo}#${number}"
-				failed=1
-				continue 2
-			fi
-			# Pause after each update so the push has a chance to (re)trigger
-			# workflows and GitHub can recompute the merge state before we recheck.
-			\sleep 3
-		done
-		info "merging ${repo}#${number}: ${title}"
-		if ! merge_pr "${repo}" "${number}"; then
-			err "failed to merge ${repo}#${number}"
+		# gh computes mergeStateStatus lazily across a listing, so re-read it
+		# per PR when it came back UNKNOWN rather than triaging on a guess.
+		if [ "${merge_state}" = "UNKNOWN" ]; then
+			merge_state="$(cut -f2 <<<"$(pr_status "${repo}" "${number}")")"
+		fi
+		if ! process_pr "${repo}" "${number}" "${author}" "${draft}" \
+			"${merge_state}" "${review}" "${auto}" "${title}"; then
 			failed=1
-			continue
 		fi
 	done <<<"${prs}"
 
 	return "${failed}"
 }
 
+# Report what happened to everything we touched. Grouped by outcome, most
+# useful first, so a long batch can be read without scrolling back through the
+# per-PR progress above. $1 is the exit status the run is ending on, used only
+# to label a summary that is cut short, so a partial listing is never mistaken
+# for a finished one.
+# shellcheck disable=SC2329  # invoked from summary_exit, below
+print_summary() {
+	local why="$1" status ref detail line count total=0 col
+	echo
+	if [ "${#summary_lines[@]}" -eq 0 ]; then
+		info "summary${why}: no open pull requests matched"
+		return 0
+	fi
+	info "summary${why}"
+	for status in merged forced armed blocked skipped interrupted failed; do
+		count=0
+		for line in "${summary_lines[@]}"; do
+			[ "$(cut -f1 <<<"${line}")" = "${status}" ] && count=$((count + 1))
+		done
+		[ "${count}" -gt 0 ] || continue
+		total=$((total + count))
+		case "${status}" in
+		merged) col="${ok_col}" ;;
+		failed | interrupted) col="${err_col}" ;;
+		*) col="${warn_col}" ;;
+		esac
+		echo "  ${col}${status} (${count})${info_off}"
+		for line in "${summary_lines[@]}"; do
+			[ "$(cut -f1 <<<"${line}")" = "${status}" ] || continue
+			ref="$(cut -f2 <<<"${line}")"
+			detail="$(cut -f3 <<<"${line}")"
+			printf '    %-40s %s\n' "${ref}" "${detail}"
+		done
+	done
+	info "  ${total} pull request(s) processed"
+}
+
+# Print the summary however the run ends: a normal finish, an unexpected error
+# under 'set -e', or a Ctrl-C part way through a long batch. Whatever we already
+# did to people's pull requests is worth reporting, and an abandoned run is
+# exactly when you most need to know how far it got.
+#
+# An untrapped SIGINT still runs the EXIT trap but exits 0, which would make an
+# abandoned run look successful, so the signals are turned into an ordinary exit
+# with the conventional 128+signal status first. bash preserves that status
+# across the EXIT trap; re-exiting with it is belt and braces.
+# shellcheck disable=SC2329  # invoked from the EXIT trap, below
+summary_exit() {
+	local rc=$?
+	local why=''
+	trap - EXIT
+	case "${rc}" in
+	130) why=' (interrupted)' ;;
+	143) why=' (terminated)' ;;
+	esac
+	# A PR we were part way through has recorded no outcome of its own yet.
+	[ -z "${current_pr}" ] || record interrupted "${current_pr}" "still in flight when the run ended"
+	print_summary "${why}"
+	exit "${rc}"
+}
+trap 'summary_exit' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # Read the repo list on stdin; keep it out of the way of the gh calls below
 # (which we run with </dev/null so they never consume the repo stream). Each
 # repo whose processing hits a gh failure bumps the counter; the script exits
-# with that count so 0 means every repo was handled cleanly.
+# with that count, so 0 means nothing went wrong -- not that everything merged,
+# which is what the summary is for.
 errors=0
 while IFS= read -r line; do
 	[ -n "${line}" ] || continue
@@ -200,6 +617,8 @@ while IFS= read -r line; do
 		errors=$((errors + 1))
 	fi
 done
+
+# The summary is left to summary_exit, so that it prints on every exit path.
 
 # Cap at 255 so a large batch can't wrap the shell's 8-bit exit code back to 0.
 [ "${errors}" -gt 255 ] && errors=255

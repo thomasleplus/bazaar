@@ -280,6 +280,37 @@ Output can be piped to other commands for bulk operations:
 github-list-repos myusername | xargs -n1 git clone
 ```
 
+## [github-merge-prs](github-merge-prs)
+
+Merges all open pull requests authored by the given users, across every repository read from standard input. Repositories may be given as `owner/repo` or as clone URLs, so the output of `github-list-repos` pipes straight in. Authors are matched against the login GitHub recorded as opening the pull request, with bots written in their `name[bot]` form.
+
+```shell
+github-list-repos thomasleplus | github-merge-prs --squash 'dependabot[bot]'
+```
+
+The aim is to get each pull request merged while forcing as little as possible, so every one is taken through the cheapest steps first and stops as soon as GitHub is willing to merge on its own:
+
+1. Merge conflicts and drafts are reported and skipped, since neither gets better by merging harder. A pull request that is already mergeable is merged straight away.
+2. Auto-merge is enabled, so that whichever later step finally satisfies branch protection lets GitHub merge the pull request unattended.
+3. The head branch is updated when it is behind the base. This comes before the two approval steps below, because the resulting push supersedes in-flight check runs and, when branch protection dismisses stale reviews, discards approvals.
+4. Actions runs held for manual approval are approved.
+5. An approving review is added when one is required and missing.
+6. The run waits for the checks to settle, bounded both by an overall budget and by a no-progress timeout, so workflows that were never triggered cannot stall the batch.
+7. Only with `--admin`, and only if all of the above fell short, the pull request is merged with administrator privileges.
+
+Waiting only helps when there is something left to escalate to, so step 6 is skipped unless `--admin` is passed. Use `--wait` to wait anyway, or `--no-wait` never to. `--timeout=SECONDS` sets the overall budget per pull request (default 600), and `--idle-timeout=SECONDS` gives up once no check has changed state for that long and none is still running (default 120).
+
+Any other option starting with `-` is forwarded to `gh pr merge`, so `--squash`, `--rebase` and `--delete-branch` work as usual, and `--merge` is used when no merge method is given. Options that take a value must be written as `--flag=value`.
+
+However the run ends, including a `Ctrl-C` part way through a long batch, it closes with a summary grouping every pull request by outcome: merged, forced, armed (left for auto-merge to finish), blocked, skipped, and failed.
+
+> [!WARNING]
+> `--admin` bypasses branch protection and merges pull requests whose required checks have not passed. It is a last resort, reached only after every cheaper step has failed to unblock the pull request.
+
+Approvals for protected deployment environments are deliberately left alone: approving a production deployment on your behalf is a bigger step than any merge, so those pull requests are reported as blocked instead.
+
+Requires the GitHub CLI (`gh`) to be installed and authenticated.
+
 ## [hdd-smart-info](hdd-smart-info)
 
 Securely wipes hard drives and runs comprehensive SMART diagnostics. This script performs a two-pass random data wipe, executes a long SMART self-test, and generates a detailed report file named after the drive's serial number.
