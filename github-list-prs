@@ -1,0 +1,99 @@
+#!/bin/bash
+# Lists the open pull requests authored by the given GitHub users, across every
+# repository read from stdin. Repositories may be given as OWNER/REPO or as
+# clone URLs (https or ssh), so the output of github-list-repos can be piped
+# straight in.
+#
+# Output is one pull request URL per line, ready to be piped into
+# github-merge-prs. Errors go to stderr, so stdout stays a clean list. The exit
+# status is the number of repos whose pull requests could not be listed (capped
+# at 255), so 0 means every repo was checked cleanly.
+#
+# Authors are matched against the login GitHub recorded as opening the pull
+# request; bots are written in their "name[bot]" form.
+#
+# Usage: github-list-repos <user> ... | github-list-prs <author> ...
+# Example: github-list-repos me | github-list-prs me 'dependabot[bot]'
+
+set -euo pipefail
+IFS=$'\n\t'
+
+# ANSI colour for stderr, blanked when NO_COLOR is set or stderr is not a
+# terminal, so redirected output stays free of escape sequences (see
+# https://no-color.org/). Only stderr is coloured; stdout is machine-readable
+# data and must never carry escape sequences.
+err_col='' msg_off=''
+if [ -z "${NO_COLOR:-}" ] && [ -t 2 ]; then
+	err_col=$'\033[31m'
+	msg_off=$'\033[0m'
+fi
+err() { >&2 echo "${err_col}$*${msg_off}"; }
+
+# Every argument is an author login. GitHub usernames never start with "-", so
+# anything that does is a mistake (most likely a github-merge-prs option given
+# to the wrong command) and is rejected rather than silently matching nothing.
+authors=()
+for arg in "$@"; do
+	case "${arg}" in
+	-*)
+		err "unknown option: ${arg}"
+		exit 2
+		;;
+	*) authors+=("${arg}") ;;
+	esac
+done
+
+if [ "${#authors[@]}" -eq 0 ]; then
+	err "usage: github-list-prs <author> [author ...]  # repos on stdin"
+	exit 2
+fi
+
+# Print the URL of every open PR in one repo authored by any of the requested
+# users. Runs gh with </dev/null so it never consumes the repo list on stdin.
+#
+# Identity is matched ONLY against .author.login -- the account GitHub recorded
+# as opening the PR. That value cannot be spoofed: nobody can open a PR as
+# another account, and an App/bot login is namespaced "app/<slug>", which no
+# human account can hold (usernames may not contain "/"). gh reports the real
+# Dependabot as login "app/dependabot", so we normalise a requested "<name>[bot]"
+# to that authoritative "app/<name>" form and compare by exact equality. We
+# deliberately do NOT synthesise a "[bot]" form from the author side, otherwise
+# a human who registered the username "dependabot" would be accepted in place of
+# the genuine "app/dependabot" bot.
+process_repo() {
+	local repo="$1" urls
+
+	if ! urls="$(\gh pr list --repo "${repo}" --state open --limit 1000 \
+		--json url,author </dev/null |
+		\jq -r --args '
+			($ARGS.positional | map(if endswith("[bot]") then "app/" + .[0:-5] else . end)) as $wanted
+			| .[]
+			| select(.author.login as $l | $wanted | index($l))
+			| .url' "${authors[@]}")"; then
+		err "could not list PRs for ${repo}, skipping"
+		return 1
+	fi
+
+	[ -z "${urls}" ] || echo "${urls}"
+}
+
+# Read the repo list on stdin. Each repo whose listing fails bumps the counter;
+# the script exits with that count so 0 means every repo was handled cleanly.
+errors=0
+while IFS= read -r line; do
+	[ -n "${line}" ] || continue
+	# Normalise clone URLs (https or ssh) down to OWNER/REPO; leave OWNER/REPO as-is.
+	repo="${line%.git}"
+	repo="${repo#https://github.com/}"
+	repo="${repo#http://github.com/}"
+	repo="${repo#ssh://git@github.com/}"
+	repo="${repo#git@github.com:}"
+
+	if ! process_repo "${repo}"; then
+		errors=$((errors + 1))
+	fi
+done
+
+# Cap at 255 so a large batch can't wrap the shell's 8-bit exit code back to 0.
+[ "${errors}" -gt 255 ] && errors=255
+exit "${errors}"

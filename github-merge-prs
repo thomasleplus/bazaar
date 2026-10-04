@@ -1,10 +1,12 @@
 #!/bin/bash
-# Merges all open pull requests authored by the given GitHub users, doing as
-# little as possible to get each one there.
+# Merges the pull requests read from stdin, doing as little as possible to get
+# each one there.
 #
-# Reads the list of repositories (clone URLs or OWNER/REPO) from stdin.
+# Reads one pull request per line from stdin, as a URL
+# (https://github.com/OWNER/REPO/pull/NUMBER) or as OWNER/REPO#NUMBER, so the
+# output of github-list-prs can be piped straight in.
 #
-# Each matching PR escalates through the cheapest steps first and stops as soon
+# Each PR escalates through the cheapest steps first and stops as soon
 # as GitHub is willing to merge on its own:
 #   1. triage  -- merge conflicts and drafts are reported and skipped (neither
 #                 gets better by merging harder, not even with --admin); a PR
@@ -28,9 +30,9 @@
 #   --idle-timeout=SEC    give up waiting once no check has changed state for
 #                         this long and none is still running (default 120)
 # Any other argument starting with "-" (e.g. --squash, --delete-branch) is
-# forwarded verbatim to `gh pr merge`; the rest are the author logins to match.
-# Options that take a value must be given as --flag=value. If no merge method
-# (--merge/--squash/--rebase) is passed, --merge is used.
+# forwarded verbatim to `gh pr merge`. Options that take a value must be given
+# as --flag=value. If no merge method (--merge/--squash/--rebase) is passed,
+# --merge is used.
 #
 # Deployment approvals for protected environments are deliberately NOT granted:
 # approving a production deployment on someone's behalf is a bigger call than
@@ -40,8 +42,8 @@
 # 'workflow' OAuth scope, the merge is retried once after adding that scope on
 # demand via 'gh auth refresh -s workflow' (a one-time interactive re-auth).
 #
-# Usage: github-list-repos <user> ... | github-merge-prs [option ...] <author> ...
-# Example: github-list-repos me | github-merge-prs --admin --squash me 'dependabot[bot]'
+# Usage: github-list-prs <author> ... | github-merge-prs [option ...]
+# Example: github-list-repos me | github-list-prs me 'dependabot[bot]' | github-merge-prs --admin --squash
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -70,12 +72,10 @@ info() { echo "${info_col}$*${info_off}"; }
 warn() { echo "${warn_col}$*${info_off}"; }
 err() { >&2 echo "${err_col}$*${msg_off}"; }
 
-# Split arguments: the script's own options are consumed here, every other
-# option (leading "-") is forwarded to `gh pr merge`, and the rest are the
-# author logins to match. GitHub usernames never start with "-", so this
-# classification is unambiguous.
+# Split arguments: the script's own options are consumed here and every other
+# option (leading "-") is forwarded to `gh pr merge`. Positional arguments are
+# rejected: the pull requests are read from stdin.
 merge_opts=()
-authors=()
 force=false
 wait_mode=auto
 timeout=600
@@ -88,14 +88,13 @@ for arg in "$@"; do
 	--timeout=*) timeout="${arg#*=}" ;;
 	--idle-timeout=*) idle_timeout="${arg#*=}" ;;
 	-*) merge_opts+=("${arg}") ;;
-	*) authors+=("${arg}") ;;
+	*)
+		err "unexpected argument: ${arg} (pull requests are read from stdin)"
+		err "usage: github-list-prs <author> ... | github-merge-prs [option ...]"
+		exit 1
+		;;
 	esac
 done
-
-if [ "${#authors[@]}" -eq 0 ]; then
-	err "usage: github-merge-prs [option ...] <author> [author ...]  # repos on stdin"
-	exit 1
-fi
 case "${timeout}:${idle_timeout}" in
 *[!0-9:]* | :* | *: | *::*)
 	err "--timeout and --idle-timeout take a number of seconds"
@@ -243,7 +242,7 @@ merge_pr() {
 	fi
 	workflow_scope_tried=true
 	info "${repo}#${number} touches a workflow file; adding the 'workflow' scope via 'gh auth refresh' (follow the browser prompt)"
-	# The device-code prompt needs a terminal, but the script's stdin is the repo
+	# The device-code prompt needs a terminal, but the script's stdin is the PR
 	# list, so read the prompt from the controlling tty instead.
 	if ! \gh auth refresh -h github.com -s workflow </dev/tty; then
 		merge_err="could not add the 'workflow' scope"$'\n'"${out}"
@@ -477,61 +476,46 @@ process_pr() {
 	return 1
 }
 
-# Process every open PR one repo has from the requested authors. A failure on an
-# individual PR is recorded and processing moves on to the next PR, so one
-# unmergeable PR doesn't skip the rest of the repo. Returns non-zero if any PR
-# failed, so the caller can count the repo and move on.
-process_repo() {
-	local repo="$1"
-	local prs number author draft merge_state review auto title failed=0
+# Read everything triage needs for one PR and hand it to process_pr. A PR that
+# is no longer open (merged or closed since it was listed) is recorded and left
+# alone. Returns non-zero if the PR could not be read or processing failed, so
+# the caller can count it and move on.
+process_ref() {
+	local repo="$1" number="$2" ref="$1#$2"
+	local fields state author draft merge_state review auto title
 
-	# List open PRs in this repo authored by any of the requested users, pulling
-	# everything triage needs in the same call.
-	#
-	# Identity is matched ONLY against .author.login -- the account GitHub
-	# recorded as opening the PR. That value cannot be spoofed: nobody can open
-	# a PR as another account, and an App/bot login is namespaced "app/<slug>",
-	# which no human account can hold (usernames may not contain "/"). gh reports
-	# the real Dependabot as login "app/dependabot", so we normalise a requested
-	# "<name>[bot]" to that authoritative "app/<name>" form and compare by exact
-	# equality. We deliberately do NOT synthesise a "[bot]" form from the author
-	# side, otherwise a human who registered the username "dependabot" would be
-	# accepted in place of the genuine "app/dependabot" bot.
-	if ! prs="$(\gh pr list --repo "${repo}" --state open --limit 1000 \
-		--json number,title,author,isDraft,mergeStateStatus,reviewDecision,autoMergeRequest </dev/null |
-		\jq -r --args '
-			($ARGS.positional | map(if endswith("[bot]") then "app/" + .[0:-5] else . end)) as $wanted
-			| .[]
-			| select(.author.login as $l | $wanted | index($l))
-			| [ .number,
-			    .author.login,
-			    (if .isDraft then "draft" else "-" end),
-			    (.mergeStateStatus // "UNKNOWN"),
-			    (.reviewDecision // "NONE"),
-			    (if .autoMergeRequest then "auto" else "-" end),
-			    .title ]
-			| @tsv' "${authors[@]}")"; then
-		err "could not list PRs for ${repo}, skipping"
-		record failed "${repo}" "could not list pull requests"
+	if ! fields="$(\gh pr view "${number}" --repo "${repo}" \
+		--json state,title,author,isDraft,mergeStateStatus,reviewDecision,autoMergeRequest \
+		--jq '[ .state,
+		        .author.login,
+		        (if .isDraft then "draft" else "-" end),
+		        (.mergeStateStatus // "UNKNOWN"),
+		        (.reviewDecision // "NONE"),
+		        (if .autoMergeRequest then "auto" else "-" end),
+		        .title ]
+		      | @tsv' </dev/null)"; then
+		err "could not read ${ref}, skipping"
+		record failed "${ref}" "could not read pull request"
 		return 1
 	fi
+	IFS=$'\t' read -r state author draft merge_state review auto title <<<"${fields}"
 
-	[ -n "${prs}" ] || return 0
+	case "${state}" in
+	MERGED | CLOSED)
+		state="$(tr '[:upper:]' '[:lower:]' <<<"${state}")"
+		warn "skipping ${ref}: already ${state}"
+		record skipped "${ref}" "already ${state}"
+		return 0
+		;;
+	esac
 
-	while IFS=$'\t' read -r number author draft merge_state review auto title; do
-		[ -n "${number}" ] || continue
-		# gh computes mergeStateStatus lazily across a listing, so re-read it
-		# per PR when it came back UNKNOWN rather than triaging on a guess.
-		if [ "${merge_state}" = "UNKNOWN" ]; then
-			merge_state="$(cut -f2 <<<"$(pr_status "${repo}" "${number}")")"
-		fi
-		if ! process_pr "${repo}" "${number}" "${author}" "${draft}" \
-			"${merge_state}" "${review}" "${auto}" "${title}"; then
-			failed=1
-		fi
-	done <<<"${prs}"
-
-	return "${failed}"
+	# GitHub computes mergeStateStatus lazily, so re-read it when it came back
+	# UNKNOWN rather than triaging on a guess.
+	if [ "${merge_state}" = "UNKNOWN" ]; then
+		merge_state="$(cut -f2 <<<"$(pr_status "${repo}" "${number}")")"
+	fi
+	process_pr "${repo}" "${number}" "${author}" "${draft}" \
+		"${merge_state}" "${review}" "${auto}" "${title}"
 }
 
 # Report what happened to everything we touched. Grouped by outcome, most
@@ -544,7 +528,7 @@ print_summary() {
 	local why="$1" status ref detail line count total=0 col
 	echo
 	if [ "${#summary_lines[@]}" -eq 0 ]; then
-		info "summary${why}: no open pull requests matched"
+		info "summary${why}: no pull requests read"
 		return 0
 	fi
 	info "summary${why}"
@@ -598,22 +582,39 @@ trap 'summary_exit' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# Read the repo list on stdin; keep it out of the way of the gh calls below
-# (which we run with </dev/null so they never consume the repo stream). Each
-# repo whose processing hits a gh failure bumps the counter; the script exits
-# with that count, so 0 means nothing went wrong -- not that everything merged,
-# which is what the summary is for.
+# Read the PR list on stdin; keep it out of the way of the gh calls below
+# (which we run with </dev/null so they never consume the PR stream). Each PR
+# whose processing hits a gh failure, or line that is not a PR at all, bumps
+# the counter; the script exits with that count, so 0 means nothing went wrong
+# -- not that everything merged, which is what the summary is for.
 errors=0
 while IFS= read -r line; do
 	[ -n "${line}" ] || continue
-	# Normalise clone URLs (https or ssh) down to OWNER/REPO; leave OWNER/REPO as-is.
-	repo="${line%.git}"
-	repo="${repo#https://github.com/}"
-	repo="${repo#http://github.com/}"
-	repo="${repo#ssh://git@github.com/}"
-	repo="${repo#git@github.com:}"
+	# Split https://github.com/OWNER/REPO/pull/NUMBER[/...] or OWNER/REPO#NUMBER
+	# into OWNER/REPO and NUMBER.
+	case "${line}" in
+	https://github.com/*/pull/* | http://github.com/*/pull/*)
+		repo="${line#*://github.com/}"
+		number="${repo#*/pull/}"
+		number="${number%%[/?#]*}"
+		repo="${repo%%/pull/*}"
+		;;
+	*#*)
+		repo="${line%%#*}"
+		number="${line#*#}"
+		;;
+	*)
+		repo='' number=''
+		;;
+	esac
+	if [[ ! "${repo}" =~ ^[^/]+/[^/]+$ || ! "${number}" =~ ^[0-9]+$ ]]; then
+		err "not a pull request: ${line}"
+		record failed "${line}" "not a pull request URL"
+		errors=$((errors + 1))
+		continue
+	fi
 
-	if ! process_repo "${repo}"; then
+	if ! process_ref "${repo}" "${number}"; then
 		errors=$((errors + 1))
 	fi
 done

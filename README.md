@@ -266,6 +266,18 @@ github-list-repos thomasleplus | github-list-failing-workflows --branch main --w
 
 Requires the GitHub CLI (`gh`) to be installed and authenticated.
 
+## [github-list-prs](github-list-prs)
+
+Lists the URLs of the open pull requests authored by the given users, across every repository read from standard input. Repositories may be given as `owner/repo` or as clone URLs, so the output of `github-list-repos` pipes straight in. Authors are matched against the login GitHub recorded as opening the pull request, with bots written in their `name[bot]` form.
+
+```shell
+github-list-repos thomasleplus | github-list-prs thomasleplus 'dependabot[bot]'
+```
+
+Output is one URL per line, ready to be piped into `github-merge-prs`.
+
+Requires the GitHub CLI (`gh`) to be installed and authenticated.
+
 ## [github-list-repos](github-list-repos)
 
 Lists all Git clone URLs for repositories belonging to specified GitHub users. This includes both personal repositories and organization repositories the user belongs to.
@@ -282,15 +294,15 @@ github-list-repos myusername | xargs -n1 git clone
 
 ## [github-merge-prs](github-merge-prs)
 
-Merges all open pull requests authored by the given users, across every repository read from standard input. Repositories may be given as `owner/repo` or as clone URLs, so the output of `github-list-repos` pipes straight in. Authors are matched against the login GitHub recorded as opening the pull request, with bots written in their `name[bot]` form.
+Merges the pull requests read from standard input. Pull requests may be given as URLs or as `owner/repo#number`, so the output of `github-list-prs` pipes straight in.
 
 ```shell
-github-list-repos thomasleplus | github-merge-prs --squash 'dependabot[bot]'
+github-list-repos thomasleplus | github-list-prs 'dependabot[bot]' | github-merge-prs --squash
 ```
 
 The aim is to get each pull request merged while forcing as little as possible, so every one is taken through the cheapest steps first and stops as soon as GitHub is willing to merge on its own:
 
-1. Merge conflicts and drafts are reported and skipped, since neither gets better by merging harder. A pull request that is already mergeable is merged straight away.
+1. Pull requests that are already merged or closed, have merge conflicts, or are drafts are reported and skipped, since none of these gets better by merging harder. A pull request that is already mergeable is merged straight away.
 2. Auto-merge is enabled, so that whichever later step finally satisfies branch protection lets GitHub merge the pull request unattended.
 3. The head branch is updated when it is behind the base. This comes before the two approval steps below, because the resulting push supersedes in-flight check runs and, when branch protection dismisses stale reviews, discards approvals.
 4. Actions runs held for manual approval are approved.
