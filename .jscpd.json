@@ -1,6 +1,8 @@
 {
   "ignore": [
     "git-squash-unpushed-commits-with-oldest-message",
-    "git-squash-unpushed-commits-with-same-message"
+    "git-squash-unpushed-commits-with-same-message",
+    ".github/workflows/osv-scanner-pr.yml",
+    ".github/workflows/osv-scanner.yml"
   ]
 }
