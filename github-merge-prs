@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Merges the pull requests read from stdin, doing as little as possible to get
 # each one there.
 #
@@ -141,7 +141,7 @@ record() {
 # would only produce a confusing error.
 viewer=''
 viewer_login() {
-	[ -n "${viewer}" ] || viewer="$(\gh api user --jq .login </dev/null 2>/dev/null || echo '?')"
+	[ -n "${viewer}" ] || viewer="$(gh api user --jq .login </dev/null 2>/dev/null || echo '?')"
 	echo "${viewer}"
 }
 
@@ -151,7 +151,7 @@ viewer_login() {
 pr_status() {
 	local repo="$1" number="$2" i out state
 	for ((i = 0; i < 5; i++)); do
-		out="$(\gh pr view "${number}" --repo "${repo}" \
+		out="$(gh pr view "${number}" --repo "${repo}" \
 			--json state,mergeStateStatus,reviewDecision,autoMergeRequest,headRefOid \
 			--jq '[.state, (.mergeStateStatus // "UNKNOWN"), (.reviewDecision // "NONE"),
 			       (if .autoMergeRequest then "auto" else "-" end), .headRefOid] | @tsv' \
@@ -161,7 +161,7 @@ pr_status() {
 			echo "${out}"
 			return 0
 		fi
-		\sleep 2
+		sleep 2
 	done
 	[ -n "${out}" ] || out=$'OPEN\tUNKNOWN\tNONE\t-\t'
 	echo "${out}"
@@ -174,8 +174,8 @@ pr_status() {
 # kinds compare the same way.
 pr_checks() {
 	local repo="$1" number="$2"
-	\gh pr view "${number}" --repo "${repo}" --json headRefOid,statusCheckRollup </dev/null 2>/dev/null |
-		\jq -r '
+	gh pr view "${number}" --repo "${repo}" --json headRefOid,statusCheckRollup </dev/null 2>/dev/null |
+		jq -r '
 			((.statusCheckRollup // [])
 			 | map(if .__typename == "CheckRun"
 			       then {n: .name, s: .status, c: (.conclusion // "")}
@@ -194,11 +194,11 @@ pr_checks() {
 # or a token without the rights, just means there is nothing to approve here.
 approve_workflow_runs() {
 	local repo="$1" sha="$2" runs id approved=0
-	runs="$(\gh api "repos/${repo}/actions/runs?status=action_required&per_page=100" </dev/null 2>/dev/null |
-		\jq -r --arg sha "${sha}" '.workflow_runs[]? | select(.head_sha == $sha) | .id' 2>/dev/null || true)"
+	runs="$(gh api "repos/${repo}/actions/runs?status=action_required&per_page=100" </dev/null 2>/dev/null |
+		jq -r --arg sha "${sha}" '.workflow_runs[]? | select(.head_sha == $sha) | .id' 2>/dev/null || true)"
 	[ -n "${runs}" ] || return 0
 	for id in ${runs}; do
-		if \gh api -X POST "repos/${repo}/actions/runs/${id}/approve" </dev/null >/dev/null 2>&1; then
+		if gh api -X POST "repos/${repo}/actions/runs/${id}/approve" </dev/null >/dev/null 2>&1; then
 			approved=$((approved + 1))
 		fi
 	done
@@ -226,7 +226,7 @@ merge_pr() {
 	local repo="$1" number="$2" out
 	shift 2
 	merge_err=''
-	if out="$(\gh pr merge "${number}" --repo "${repo}" "${merge_opts[@]}" "$@" </dev/null 2>&1)"; then
+	if out="$(gh pr merge "${number}" --repo "${repo}" "${merge_opts[@]}" "$@" </dev/null 2>&1)"; then
 		[ -n "${out}" ] && echo "${out}"
 		return 0
 	fi
@@ -244,12 +244,12 @@ merge_pr() {
 	info "${repo}#${number} touches a workflow file; adding the 'workflow' scope via 'gh auth refresh' (follow the browser prompt)"
 	# The device-code prompt needs a terminal, but the script's stdin is the PR
 	# list, so read the prompt from the controlling tty instead.
-	if ! \gh auth refresh -h github.com -s workflow </dev/tty; then
+	if ! gh auth refresh -h github.com -s workflow </dev/tty; then
 		merge_err="could not add the 'workflow' scope"$'\n'"${out}"
 		return 1
 	fi
 	# Retry once now that the token should carry the scope.
-	if out="$(\gh pr merge "${number}" --repo "${repo}" "${merge_opts[@]}" "$@" </dev/null 2>&1)"; then
+	if out="$(gh pr merge "${number}" --repo "${repo}" "${merge_opts[@]}" "$@" </dev/null 2>&1)"; then
 		[ -n "${out}" ] && echo "${out}"
 		return 0
 	fi
@@ -297,7 +297,7 @@ wait_for_pr() {
 			return 5
 		fi
 		[ "${SECONDS}" -lt "${deadline}" ] || return 6
-		\sleep 10
+		sleep 10
 	done
 }
 
@@ -356,14 +356,14 @@ process_pr() {
 	for ((attempt = 1; attempt <= 3; attempt++)); do
 		[ "$(cut -f2 <<<"${status}")" = "BEHIND" ] || break
 		info "  updating branch (behind base, attempt ${attempt}/3)"
-		if ! \gh pr update-branch "${number}" --repo "${repo}" </dev/null >/dev/null; then
+		if ! gh pr update-branch "${number}" --repo "${repo}" </dev/null >/dev/null; then
 			err "could not update branch for ${ref}"
 			record failed "${ref}" "branch update failed"
 			return 1
 		fi
 		# Pause after each update so the push has a chance to (re)trigger
 		# workflows and GitHub can recompute the merge state before we recheck.
-		\sleep 3
+		sleep 3
 		status="$(pr_status "${repo}" "${number}")"
 	done
 
@@ -379,7 +379,7 @@ process_pr() {
 	if [ "${review}" = "REVIEW_REQUIRED" ]; then
 		if [ "${author}" = "$(viewer_login)" ]; then
 			info "  review required but this is our own PR; GitHub forbids self-approval"
-		elif \gh pr review "${number}" --repo "${repo}" --approve </dev/null >/dev/null 2>&1; then
+		elif gh pr review "${number}" --repo "${repo}" --approve </dev/null >/dev/null 2>&1; then
 			info "  approving review added"
 		else
 			info "  could not add an approving review"
@@ -484,7 +484,7 @@ process_ref() {
 	local repo="$1" number="$2" ref="$1#$2"
 	local fields state author draft merge_state review auto title
 
-	if ! fields="$(\gh pr view "${number}" --repo "${repo}" \
+	if ! fields="$(gh pr view "${number}" --repo "${repo}" \
 		--json state,title,author,isDraft,mergeStateStatus,reviewDecision,autoMergeRequest \
 		--jq '[ .state,
 		        .author.login,

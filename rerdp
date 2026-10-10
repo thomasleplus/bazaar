@@ -1,11 +1,12 @@
-#!/bin/bash
-# Encodes plain text to UTF-16 LE (little-endian) format
-# Adds byte order mark (0xFF 0xFE) and null bytes between characters
+#!/usr/bin/env bash
+# Encodes UTF-8 text from stdin to UTF-16 LE (little-endian) format
+# Adds the byte order mark (0xFF 0xFE) expected in .rdp files, then converts the
+# text with iconv, so every character survives (not only Latin-1). Invalid UTF-8
+# makes iconv fail with an error on glibc (Linux) and macOS; musl's iconv
+# (Alpine) silently drops it instead.
 
 set -euo pipefail
 IFS=$'\n\t'
 
 printf "\xff\xfe"
-while LANG=C IFS= read -r -d '' -n 1 char; do
-	printf "\x00%s" "${char}"
-done
+iconv -f UTF-8 -t UTF-16LE

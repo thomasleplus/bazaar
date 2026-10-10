@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Commits the staged changes with the exact details of the last commit on the
 # current branch: the message is reused verbatim (subject, body and trailers)
 # together with the original author and author date. Only the committer and the

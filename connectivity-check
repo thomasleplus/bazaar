@@ -1,46 +1,40 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Tests network connectivity by checking various OS-specific connectivity endpoints
 # Queries Linux, Windows, Android, iOS, and SSL endpoints to verify network access
 
-set -uo pipefail
+set -euo pipefail
 IFS=$'\n\t'
 
+# Prints the status line and any redirect of each URL, fetched with the given
+# user agent. A failed request (no network, DNS blocked...) is exactly what this
+# script is meant to show, so it is reported by curl on stderr but must not stop
+# the remaining checks under 'set -e'.
+check() {
+	local ua="$1" url
+	shift
+	for url in "$@"; do
+		echo "GET ${url}"
+		curl -s -S -I -L -A "${ua}" "${url}" | grep -e '^HTTP' -e '^Location' || true
+		echo
+	done
+}
+
 # Linux
-UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36'
-for URL in 'http://connectivity-check.ubuntu.com' 'http://www.neverssl.com'; do
-	/bin/echo "GET ${URL}"
-	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-	/bin/echo
-done
+check 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36' \
+	'http://connectivity-check.ubuntu.com' 'http://www.neverssl.com'
 
 # Windows
-UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'
-for URL in 'http://www.msftconnecttest.com/connecttest.txt' 'http://www.msftncsi.com/ncsi.txt'; do
-	/bin/echo "GET ${URL}"
-	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-	/bin/echo
-done
+check 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36' \
+	'http://www.msftconnecttest.com/connecttest.txt' 'http://www.msftncsi.com/ncsi.txt'
 
 # Android
-UA='Mozilla/5.0 (Linux; U; Android 2.2) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1'
-for URL in 'http://clients3.google.com/generate_204' 'http://connectivitycheck.android.com/generate_204' 'http://connectivitycheck.gstatic.com/generate_204'; do
-	/bin/echo "GET ${URL}"
-	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-	/bin/echo
-done
+check 'Mozilla/5.0 (Linux; U; Android 2.2) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1' \
+	'http://clients3.google.com/generate_204' 'http://connectivitycheck.android.com/generate_204' 'http://connectivitycheck.gstatic.com/generate_204'
 
 # iOS
-UA='Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
-for URL in 'http://captive.apple.com/hotspot-detect.html' 'http://www.apple.com/library/test/success.html'; do
-	/bin/echo "GET ${URL}"
-	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-	/bin/echo
-done
+check 'Mozilla/5.0 (iPhone; CPU iPhone OS 12_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148' \
+	'http://captive.apple.com/hotspot-detect.html' 'http://www.apple.com/library/test/success.html'
 
 # SSL
-UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36'
-for URL in 'https://www.google.com' 'https://www.apple.com'; do
-	/bin/echo "GET ${URL}"
-	/usr/bin/curl -s -S -I -L -A "${UA}" "${URL}" | /bin/grep -e '^HTTP' -e '^Location'
-	/bin/echo
-done
+check 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/74.0.3729.169 Safari/537.36' \
+	'https://www.google.com' 'https://www.apple.com'

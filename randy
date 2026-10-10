@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Generates a cryptographically-seeded random string of a desired length
 # Supports specifying the alphabet as a literal string (-a) or character range (-r)
 
@@ -65,7 +65,7 @@ if [[ -z ${length+x} ]]; then
 	exit 1
 fi
 
-if [[ "${length}" =~ [^0-9] ]]; then
+if [[ ! "${length}" =~ ^[0-9]+$ ]]; then
 	>&2 echo "randy: error: invalid -n argument: ${length} is not a number"
 	exit 1
 fi
@@ -106,7 +106,9 @@ if [[ -n ${range+x} ]]; then
 	if [ "${DEBUG}" = true ]; then
 		>&2 echo "randy: debug: converting range '${range}' to alphabet"
 	fi
-	for i in {0..255}; do
+	# Start at 1: character 0 is NUL, which can never be part of a bash string
+	# (bash 4.4+ even warns about it when it comes out of a $(...)).
+	for i in {1..255}; do
 		c="$(int_to_char "${i}")"
 		if [[ "${c}" =~ ^[${range}]$ ]]; then
 			alphabet_array+=("${c}")
@@ -116,14 +118,22 @@ else
 	if [ "${DEBUG}" = true ]; then
 		>&2 echo "randy: debug: converting alphabet '${alphabet}' to array"
 	fi
-	while IFS='' read -r l; do alphabet_array+=("${l}"); done < <(echo "${alphabet}" | \grep -o . | \sort -u)
+	while IFS='' read -r l; do alphabet_array+=("${l}"); done < <(echo "${alphabet}" | grep -o . | sort -u)
+fi
+# Checked before any "${alphabet_array[@]}": expanding an empty array is an
+# error under 'set -u' in bash < 4.4 (e.g. macOS's /bin/bash 3.2).
+if [ "${#alphabet_array[@]}" -eq 0 ]; then
+	>&2 echo 'randy: error: the alphabet is empty'
+	exit 1
 fi
 if [ "${DEBUG}" = true ]; then
 	>&2 echo "randy: debug: final alphabet is: $(join_by ' ' "${alphabet_array[@]}")"
 fi
 # let's calculate the modulo
 m="${#alphabet_array[@]}"
-for i in $(\seq "${length}"); do
+# An arithmetic loop rather than seq: BSD seq (macOS) counts down for "seq 0".
+# 10# keeps a leading zero from being read as an octal number.
+for ((i = 0; i < 10#${length}; i++)); do
 	r=$((RANDOM % m))
 	printf '%s' "${alphabet_array[${r}]}"
 done

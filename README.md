@@ -47,12 +47,15 @@ See `randy -h` for details.
 
 ## [derdp](derdp) and [rerdp](rerdp)
 
-Microsoft Remote Desktop Protocol files (`.rdp`) use an esoteric
-encoding called `USC-2 LE BOM`. It makes it difficult to edit this
-files with many text editors or with the usual command lines
-utilities. The scripts `derdp` and `rerdp` allow convert back and
-forth `USC-2 LE BOM` and the more traditional `latin1` encoding to
-make things easier.
+Microsoft Remote Desktop Protocol files (`.rdp`) are encoded in
+`UTF-16 LE` with a byte order mark (`BOM`). It makes it difficult to
+edit these files with many text editors or with the usual command line
+utilities. The scripts `derdp` and `rerdp` convert back and forth
+between `UTF-16 LE BOM` and the more traditional `UTF-8` encoding to
+make things easier. Every character is preserved, and invalid input is
+reported as an error (except on Alpine Linux, where musl's `iconv`
+silently drops it). Both scripts require `iconv`, which is available
+by default on macOS and Linux.
 
 For example if you want to use `sed` to modify the content of a `.rdp`
 file, you could do something like:

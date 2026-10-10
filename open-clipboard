@@ -1,8 +1,36 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Opens the URL from the clipboard in the default browser
 # Trims whitespace from the clipboard content before opening
+# Works on macOS (pbpaste/open) and on Linux with xdg-open, reading the
+# clipboard with wl-paste under Wayland or xclip/xsel under X11.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-/usr/bin/xdg-open "$(/usr/bin/xclip -out -selection clipboard | /bin/sed 's/\s*$//; s/^\s*//;')"
+if [ "$(uname -s)" = Darwin ]; then
+	paste_cmd=(pbpaste)
+	open_cmd=(open)
+else
+	open_cmd=(xdg-open)
+	if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-paste >/dev/null 2>&1; then
+		paste_cmd=(wl-paste --no-newline)
+	elif command -v xclip >/dev/null 2>&1; then
+		paste_cmd=(xclip -out -selection clipboard)
+	elif command -v xsel >/dev/null 2>&1; then
+		paste_cmd=(xsel --clipboard --output)
+	else
+		>&2 echo "open-clipboard: error: no clipboard tool found (install wl-clipboard, xclip or xsel)"
+		exit 1
+	fi
+fi
+
+url="$("${paste_cmd[@]}")"
+# Trim leading and trailing whitespace in pure bash: sed's \s is a GNU extension.
+url="${url#"${url%%[![:space:]]*}"}"
+url="${url%"${url##*[![:space:]]}"}"
+if [ -z "${url}" ]; then
+	>&2 echo "open-clipboard: error: the clipboard is empty"
+	exit 1
+fi
+
+"${open_cmd[@]}" "${url}"

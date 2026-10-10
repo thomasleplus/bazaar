@@ -1,37 +1,62 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Securely wipes hard drives and runs SMART diagnostics
 # Performs two-pass random data wipe, runs long SMART test, and generates a report file
 # WARNING: This script will DESTROY ALL DATA on the specified drives
 # Usage: hdd-smart-info <disk1> <disk2> ...
 
-set -uo pipefail
+set -euo pipefail
 IFS=$'\n\t'
 
+# smartctl's exit status is a bit mask that is non-zero for many non-fatal
+# conditions (a SMART command the drive does not support, errors in the drive's
+# logs, a failing drive...), see its man page. Those are what the report is for,
+# so smartctl calls below are not allowed to abort the script with '|| true'.
+
+# shasum ships with Perl and is not always installed on Linux; sha1sum is not
+# installed on older macOS. Both print the same "<hash>  -" line.
+if command -v sha1sum >/dev/null 2>&1; then
+	sha1=sha1sum
+else
+	sha1=shasum
+fi
+
 for disk in "$@"; do
-	echo "$(\date): turn on smart ${disk}"
-	\smartctl --smart=on --saveauto=on "${disk}"
-	echo "$(\date): wipe 1/2 ${disk}"
-	\dd if=/dev/urandom "of=${disk}" bs=1024k || \true
-	echo "$(\date): wipe 2/2 ${disk}"
-	\dd if=/dev/urandom "of=${disk}" bs=1024k || \true
-	echo "$(\date): test ${disk}"
+	echo "$(date): turn on smart ${disk}"
+	smartctl --smart=on --saveauto=on "${disk}" || true
+	# On macOS the disk must be unmounted before it can be overwritten, and the
+	# raw /dev/rdiskN node is much faster to write than the buffered /dev/diskN.
+	target="${disk}"
+	if [ "$(uname -s)" = Darwin ]; then
+		diskutil unmountDisk "${disk}"
+		case "${disk}" in
+		/dev/disk*) target="/dev/rdisk${disk#/dev/disk}" ;;
+		esac
+	fi
+	# dd stops with "No space left on device" once the whole disk is written.
+	echo "$(date): wipe 1/2 ${disk}"
+	dd if=/dev/urandom "of=${target}" bs=1024k || true
+	echo "$(date): wipe 2/2 ${disk}"
+	dd if=/dev/urandom "of=${target}" bs=1024k || true
+	echo "$(date): test ${disk}"
 	# -C runs the test in captive (foreground) mode; fall back to background polling
-	# if the drive doesn't support it.
-	if ! \smartctl -t long -C "${disk}"; then
-		\smartctl -t long "${disk}"
-		\sleep 60
-		while \smartctl -a "${disk}" | \grep -e '% of test remaining.'; do
-			\sleep 60
+	# if the drive doesn't support it. Progress is reported as "NN% of test
+	# remaining." by ATA drives and as "... in progress (NN% completed)" by NVMe
+	# drives.
+	if ! smartctl -t long -C "${disk}"; then
+		smartctl -t long "${disk}" || true
+		sleep 60
+		while { smartctl -a "${disk}" || true; } | grep -E -e '% of test remaining\.' -e 'in progress \([0-9]+% completed\)'; do
+			sleep 60
 		done
 	fi
-	echo "$(\date): report ${disk}"
+	echo "$(date): report ${disk}"
 	# Use a random hex string as a temporary filename until the serial number is known.
-	rand=$(\hexdump -vn8 -e'4/4 "%08X" 1 "\n"' /dev/urandom)
-	\smartctl -i -a "${disk}" >"${rand}.txt"
-	sn=$(\grep -e '^Serial Number:' "${rand}.txt" | \sed 's/^.* //')
+	rand=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+	smartctl -i -a "${disk}" >"${rand}.txt" || true
+	sn=$(grep -e '^Serial Number:' "${rand}.txt" | sed 's/^.* //' || true)
 	if [ -n "${sn}" ]; then
-		\mv -f "${rand}.txt" "${sn}.txt"
+		mv -f "${rand}.txt" "${sn}.txt"
 		echo >>"${sn}.txt"
-		echo -n "${sn}" | \shasum >>"${sn}.txt"
+		printf '%s' "${sn}" | "${sha1}" >>"${sn}.txt"
 	fi
 done

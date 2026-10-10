@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Lists the open pull requests authored by the given GitHub users, across every
 # repository read from stdin. Repositories may be given as OWNER/REPO or as
 # clone URLs (https or ssh), so the output of github-list-repos can be piped
@@ -60,16 +60,20 @@ fi
 # deliberately do NOT synthesise a "[bot]" form from the author side, otherwise
 # a human who registered the username "dependabot" would be accepted in place of
 # the genuine "app/dependabot" bot.
+#
+# The authors reach jq as one newline-separated --arg (a login cannot contain a
+# newline) rather than with --args, which needs jq 1.6+.
 process_repo() {
 	local repo="$1" urls
 
-	if ! urls="$(\gh pr list --repo "${repo}" --state open --limit 1000 \
+	if ! urls="$(gh pr list --repo "${repo}" --state open --limit 1000 \
 		--json url,author </dev/null |
-		\jq -r --args '
-			($ARGS.positional | map(if endswith("[bot]") then "app/" + .[0:-5] else . end)) as $wanted
+		jq -r --arg authors "$(printf '%s\n' "${authors[@]}")" '
+			($authors | split("\n") | map(select(length > 0)
+				| if endswith("[bot]") then "app/" + .[0:-5] else . end)) as $wanted
 			| .[]
 			| select(.author.login as $l | $wanted | index($l))
-			| .url' "${authors[@]}")"; then
+			| .url')"; then
 		err "could not list PRs for ${repo}, skipping"
 		return 1
 	fi

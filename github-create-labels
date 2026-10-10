@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Creates Conventional Commits labels in GitHub repositories
 # Usage: github-create-labels <repo1> <repo2> ...
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Lists the workflows that are currently failing for each repository read from
 # stdin. Repositories may be given as OWNER/REPO or as clone URLs (https or
 # ssh); anything else on the line is normalised down to OWNER/REPO, so the
@@ -115,7 +115,7 @@ process_repo() {
 	local repo="$1"
 	local workflows wf_id name path result conclusion url failed=0
 
-	if ! workflows="$(\gh api "repos/${repo}/actions/workflows" --paginate \
+	if ! workflows="$(gh api "repos/${repo}/actions/workflows" --paginate \
 		--jq '.workflows[] | select(.state == "active") | "\(.id)\t\(.name)\t\(.path)"' \
 		</dev/null 2>/dev/null)"; then
 		err "could not list workflows for ${repo}, skipping"
@@ -129,7 +129,7 @@ process_repo() {
 		# Honour --workflow filters (by name, filename or id) before spending an
 		# API call on this workflow's runs.
 		wanted_workflow "${wf_id}" "${name}" "${path##*/}" || continue
-		if ! result="$(\gh api "repos/${repo}/actions/workflows/${wf_id}/runs" \
+		if ! result="$(gh api "repos/${repo}/actions/workflows/${wf_id}/runs" \
 			"${runs_args[@]}" --jq "${failing_jq}" </dev/null 2>/dev/null)"; then
 			err "could not read runs for ${repo} workflow '${name}', skipping"
 			failed=1

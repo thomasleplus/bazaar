@@ -1,14 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# Lists pip-installed packages and their last access times
 
 set -euo pipefail
 IFS=$'\n\t'
 
-# Lists pip-installed packages and their last access times
-
 # You can specify which python to use, e.g. PYTHON=python3.12
 PYTHON=${PYTHON:-python3}
 
-echo "Using Python interpreter: $($PYTHON --version)"
+echo "Using Python interpreter: $("${PYTHON}" --version)"
 echo "Collecting package access times..."
 echo "--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"
 printf "%-25s %-25s %-25s %s\n" "PACKAGE" "VERSION" "LAST ACCESS" "PACKAGE PATH"
@@ -16,9 +15,11 @@ echo "--------------------------------------------------------------------------
 
 # Loop through all pip-installed packages
 # --format=freeze outputs "pkg==version"; sed converts "==" to "=" so IFS='=' can split it.
-$PYTHON -m pip list --format=freeze | sed -e 's/==/=/' | while IFS=$'=' read -r pkg version; do
+# A package that cannot be located is skipped, so the lookups below must not
+# abort the loop under 'set -e' / 'pipefail' when they come back empty.
+"${PYTHON}" -m pip list --format=freeze | sed -e 's/==/=/' | while IFS=$'=' read -r pkg version; do
 	# Get package install location
-	loc=$(${PYTHON} -m pip show "${pkg}" 2>/dev/null | awk '/Location:/{print $2}')
+	loc=$("${PYTHON}" -m pip show "${pkg}" 2>/dev/null | awk '/^Location:/{print $2}' || true)
 	if [ -z "${loc}" ]; then
 		continue
 	fi
@@ -27,16 +28,17 @@ $PYTHON -m pip list --format=freeze | sed -e 's/==/=/' | while IFS=$'=' read -r 
 
 	# Some packages are installed as .dist-info directories instead of pure package dirs
 	if [ ! -d "${pkg_path}" ]; then
-		pkg_path=$(find "${loc}" -maxdepth 1 -type d -name "${pkg}-*.dist-info" | head -n 1)
+		pkg_path=$(find "${loc}" -maxdepth 1 -type d -name "${pkg}-*.dist-info" -print -quit 2>/dev/null || true)
 	fi
 
 	# Skip if still not found
-	if [ ! -d "${pkg_path}" ]; then
+	if [ -z "${pkg_path}" ] || [ ! -d "${pkg_path}" ]; then
 		continue
 	fi
 
-	# Get last access time in ISO 8601 format
-	atime=$(stat -f "%Sa" -t "%Y-%m-%dT%H:%M:%S%z" "${pkg_path}" 2>/dev/null)
+	# Get last access time in ISO 8601 format. Python is used rather than stat,
+	# whose options differ between GNU (Linux) and BSD (macOS).
+	atime=$("${PYTHON}" -c 'import datetime, os, sys; print(datetime.datetime.fromtimestamp(os.stat(sys.argv[1]).st_atime).astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"))' "${pkg_path}" 2>/dev/null || true)
 	printf "%-25s %-25s %-25s %s\n" "${pkg}" "${version}" "${atime}" "${pkg_path}"
 done
 

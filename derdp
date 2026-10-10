@@ -1,25 +1,22 @@
-#!/bin/bash
-# Decodes UTF-16 LE (little-endian) encoded text from stdin
-# Strips the byte order mark (0xFF 0xFE) and null bytes to output plain text
+#!/usr/bin/env bash
+# Decodes UTF-16 LE (little-endian) encoded text from stdin to UTF-8
+# Checks and strips the byte order mark (0xFF 0xFE), then converts the rest with
+# iconv, so every character survives (not only Latin-1). Invalid input makes
+# iconv fail with an error on glibc (Linux) and macOS; musl's iconv (Alpine)
+# silently drops it instead.
 
 set -euo pipefail
 IFS=$'\n\t'
 
-counter=0
-while LANG=C IFS= read -r -d '' -n 1 char; do
-	if [[ "${counter}" -eq 0 ]]; then
-		if [ "$(echo -n "${char}" | xxd -p)" != 'ff' ]; then
-			>&2 echo "derdp: error: first byte should be 0xFF"
-			exit 1
-		fi
-	elif [[ "${counter}" -eq 1 ]]; then
-		if [ "$(echo -n "${char}" | xxd -p)" != 'fe' ]; then
-			>&2 echo "derdp: error: second byte should be 0xFE"
-			exit 1
-		fi
-	else
-		# null chars are automatically ignored
-		printf "%s" "${char}"
-	fi
-	counter=$((counter + 1))
-done
+# The BOM is read one byte at a time with read, in the C locale so that each
+# read returns a single byte. read never consumes more than it returns (it reads
+# a pipe byte by byte and seeks back in a file), so iconv gets the rest of stdin.
+if ! LC_ALL=C IFS= read -r -d '' -n 1 char || [ "${char}" != $'\xff' ]; then
+	>&2 echo "derdp: error: first byte should be 0xFF"
+	exit 1
+fi
+if ! LC_ALL=C IFS= read -r -d '' -n 1 char || [ "${char}" != $'\xfe' ]; then
+	>&2 echo "derdp: error: second byte should be 0xFE"
+	exit 1
+fi
+iconv -f UTF-16LE -t UTF-8

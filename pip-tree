@@ -1,14 +1,22 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Displays the full dependency tree for packages listed in requirements.txt
 # Creates a temporary virtual environment, installs dependencies, and runs pipdeptree
 
 set -euo pipefail
 IFS=$'\n\t'
 
-\python3 -m venv /tmp/dep-tree-env
+# A fresh directory per run, removed however the script ends (set -e included).
+venv="$(mktemp -d)"
+trap 'rm -rf "${venv}"' EXIT
+
+python3 -m venv "${venv}"
+# The activate script lives in bin/ on Unix but in Scripts/ on Windows (Git Bash).
+activate="${venv}/bin/activate"
+[ -f "${activate}" ] || activate="${venv}/Scripts/activate"
+# Older activate scripts read unset variables, which 'set -u' would turn into errors.
+set +u
 # shellcheck source=/dev/null
-source /tmp/dep-tree-env/bin/activate
-\pip install -r requirements.txt
-\pipdeptree -fl
-deactivate
-\rm -rf /tmp/dep-tree-env
+source "${activate}"
+set -u
+pip install -r requirements.txt
+pipdeptree -fl
