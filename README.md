@@ -307,7 +307,7 @@ The aim is to get each pull request merged while forcing as little as possible, 
 
 1. Pull requests that are already merged or closed, have merge conflicts, or are drafts are reported and skipped, since none of these gets better by merging harder. A pull request that is already mergeable is merged straight away.
 2. Auto-merge is enabled, so that whichever later step finally satisfies branch protection lets GitHub merge the pull request unattended.
-3. The head branch is updated when it is behind the base. This comes before the two approval steps below, because the resulting push supersedes in-flight check runs and, when branch protection dismisses stale reviews, discards approvals.
+3. The head branch is updated when it is behind the base. This comes before the two approval steps below, because the resulting push supersedes in-flight check runs and, when branch protection dismisses stale reviews, discards approvals. Dependabot pull requests are rebased with an `@dependabot rebase` comment instead, so that Dependabot keeps maintaining them, falling back to updating the branch directly if Dependabot has not rebased within the idle timeout.
 4. Actions runs held for manual approval are approved.
 5. An approving review is added when one is required and missing.
 6. The run waits for the checks to settle, bounded both by an overall budget and by a no-progress timeout, so workflows that were never triggered cannot stall the batch.

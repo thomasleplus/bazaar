@@ -16,7 +16,9 @@
 #   3. update  -- update the head branch when it is behind the base. Done
 #                 before both approval steps below, because the resulting push
 #                 supersedes in-flight check runs and, when branch protection
-#                 dismisses stale reviews, discards approvals.
+#                 dismisses stale reviews, discards approvals. Dependabot PRs
+#                 are rebased with an '@dependabot rebase' comment instead (see
+#                 dependabot_rebase).
 #   4. approve -- approve Actions runs held for manual approval.
 #   5. review  -- add an approving review when one is required and missing.
 #   6. wait    -- poll until GitHub merges the armed PR (see --timeout).
@@ -206,6 +208,27 @@ approve_workflow_runs() {
 	return 0
 }
 
+# Ask Dependabot to rebase one of its own PRs, then wait for the new head commit
+# to land. Preferred over 'gh pr update-branch' for Dependabot PRs because once
+# someone else pushes to its branch, Dependabot stops maintaining the PR (no more
+# rebases or version bumps). The command is asynchronous, so we poll until the
+# head moves away from $3, giving up after --idle-timeout. Returns non-zero if
+# the comment could not be posted or nothing moved in time -- for instance
+# because the branch already carries someone else's commits, which Dependabot
+# refuses to rebase over -- so the caller can fall back to updating the branch
+# itself.
+dependabot_rebase() {
+	local repo="$1" number="$2" old_sha="$3" deadline sha
+	gh pr comment "${number}" --repo "${repo}" --body '@dependabot rebase' </dev/null >/dev/null 2>&1 || return 1
+	deadline=$((SECONDS + idle_timeout))
+	while [ "${SECONDS}" -lt "${deadline}" ]; do
+		sleep 10
+		sha="$(cut -f5 <<<"$(pr_status "${repo}" "${number}")")"
+		[ -z "${sha}" ] || [ "${sha}" = "${old_sha}" ] || return 0
+	done
+	return 1
+}
+
 # Whether we've already gone through the one-time 'gh auth refresh' to add the
 # 'workflow' scope this run (see merge_pr). Set once we've attempted it, whether
 # it succeeded or not, so a batch full of workflow PRs re-prompts at most once.
@@ -307,7 +330,7 @@ wait_for_pr() {
 # a PR we legitimately left alone doesn't count as an error.
 process_pr() {
 	local repo="$1" number="$2" author="$3" draft="$4" merge_state="$5" review="$6" auto="$7" title="$8"
-	local ref="${repo}#${number}" status state sha attempt armed=false rc
+	local ref="${repo}#${number}" status state sha attempt armed=false use_dependabot=false rc
 	current_pr="${ref}"
 
 	if [ "${draft}" = "draft" ]; then
@@ -352,10 +375,25 @@ process_pr() {
 	# 2. Update the head branch while it is behind the base. Capped low on
 	# purpose: with auto-merge armed there is no need to win a race against a
 	# busy base branch, GitHub will merge whenever the PR does come up to date.
+	# Dependabot PRs are rebased by Dependabot itself while that works; once we
+	# have pushed to the branch ourselves it no longer will, so the fallback is
+	# for good.
+	[ "${author}" = "app/dependabot" ] && use_dependabot=true
 	status="$(pr_status "${repo}" "${number}")"
 	for ((attempt = 1; attempt <= 3; attempt++)); do
 		[ "$(cut -f2 <<<"${status}")" = "BEHIND" ] || break
-		info "  updating branch (behind base, attempt ${attempt}/3)"
+		if "${use_dependabot}"; then
+			info "  asking Dependabot to rebase (behind base, attempt ${attempt}/3)"
+			if dependabot_rebase "${repo}" "${number}" "$(cut -f5 <<<"${status}")"; then
+				sleep 3
+				status="$(pr_status "${repo}" "${number}")"
+				continue
+			fi
+			info "  Dependabot did not rebase within ${idle_timeout}s, updating the branch directly"
+			use_dependabot=false
+		else
+			info "  updating branch (behind base, attempt ${attempt}/3)"
+		fi
 		if ! gh pr update-branch "${number}" --repo "${repo}" </dev/null >/dev/null; then
 			err "could not update branch for ${ref}"
 			record failed "${ref}" "branch update failed"
