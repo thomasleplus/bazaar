@@ -300,7 +300,7 @@ github-list-repos myusername | xargs -n1 git clone
 Merges the pull requests read from standard input. Pull requests may be given as URLs or as `owner/repo#number`, so the output of `github-list-prs` pipes straight in.
 
 ```shell
-github-list-repos thomasleplus | github-list-prs 'dependabot[bot]' | github-merge-prs --squash
+github-list-repos thomasleplus | github-list-prs 'dependabot[bot]' | github-merge-prs
 ```
 
 The aim is to get each pull request merged while forcing as little as possible, so every one is taken through the cheapest steps first and stops as soon as GitHub is willing to merge on its own:
@@ -315,7 +315,7 @@ The aim is to get each pull request merged while forcing as little as possible, 
 
 Waiting only helps when there is something left to escalate to, so step 6 is skipped unless `--admin` is passed. Use `--wait` to wait anyway, or `--no-wait` never to. `--timeout=SECONDS` sets the overall budget per pull request (default 600), and `--idle-timeout=SECONDS` gives up once no check has changed state for that long and none is still running (default 120).
 
-Any other option starting with `-` is forwarded to `gh pr merge`, so `--squash`, `--rebase` and `--delete-branch` work as usual, and `--merge` is used when no merge method is given. Options that take a value must be written as `--flag=value`.
+Any other option starting with `-` is forwarded to `gh pr merge`, so options such as `--delete-branch` work as usual. Pull requests are squashed by default, since that is the only merge method our repositories allow; pass `--merge` or `--rebase` to override it for a repository that allows them. Options that take a value must be written as `--flag=value`.
 
 However the run ends, including a `Ctrl-C` part way through a long batch, it closes with a summary grouping every pull request by outcome: merged, forced, armed (left for auto-merge to finish), blocked, skipped, and failed.
 
